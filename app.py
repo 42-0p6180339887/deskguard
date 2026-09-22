@@ -14,6 +14,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from camera_worker import run_camera, decode_photo, HOST_PATH
+from desktop_pet import DesktopPet
 from guard_core import TriggerGate, check_storage, save_jpeg, validate_output_dir
 from windows_input import InputMonitor, is_interactive_desktop, keep_awake, read_last_input_tick
 from windows_tray import DesktopControls
@@ -49,6 +50,7 @@ class GuardApp:
         self.deadline = 0.0
         self.pause_seen = False
         self.closing = False
+        self.pet = DesktopPet(root, APP_DIR / "assets" / "deskguard-pet.png")
         root.title("离席守护 · 未布防")
         try:
             root.iconbitmap(default=str(ICON_PATH))
@@ -65,6 +67,7 @@ class GuardApp:
         self.limit = tk.StringVar(value="2")
         self.prevent_sleep = tk.BooleanVar(value=True)
         self.compatible = tk.BooleanVar(value=False)
+        self.pet_mode = tk.StringVar(value="silent")
         self.load_settings()
         self.build_ui()
         root.update_idletasks()
@@ -93,12 +96,14 @@ class GuardApp:
             for key in ("prevent_sleep", "compatible"):
                 if isinstance(data.get(key), bool):
                     getattr(self, key).set(data[key])
+            if data.get("pet_mode") in ("silent", "patrol"):
+                self.pet_mode.set(data["pet_mode"])
         except (OSError, ValueError, TypeError):
             pass
 
     def save_settings(self):
         data = {key: getattr(self, key).get() for key in
-                ("folder", "camera", "interval", "delay", "limit", "prevent_sleep", "compatible")}
+                ("folder", "camera", "interval", "delay", "limit", "prevent_sleep", "compatible", "pet_mode")}
         try:
             self.settings_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError:
@@ -157,11 +162,23 @@ class GuardApp:
                                            variable=self.compatible)
         self.compat_check.grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
         self.inputs.extend([self.awake_check, self.compat_check])
+        pet_options = ttk.Frame(options)
+        pet_options.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(7, 0))
+        ttk.Label(pet_options, text="桌宠模式").pack(side="left", padx=(0, 12))
+        self.pet_widgets = []
+        for label, value in (("静默保护", "silent"), ("鹅鹅巡逻", "patrol")):
+            widget = ttk.Radiobutton(pet_options, text=label, variable=self.pet_mode, value=value,
+                                     command=self.change_pet_mode)
+            widget.pack(side="left", padx=(0, 12))
+            self.pet_widgets.append(widget)
+        ttk.Label(pet_options, text="巡逻只沿屏幕边缘移动，不抢焦点、不拦截点击。",
+                  foreground=MUTED).pack(side="left")
+        self.inputs.extend(self.pet_widgets)
         self.hint = ttk.Label(body, text="Ctrl + Alt + F9  布防 / 停止     ·     Ctrl + Alt + F10  显示 / 隐藏窗口\n默认过滤系统标记的模拟输入；触屏支持及 Codex 误触发情况，请在本机试用确认。",
                               foreground=MUTED, wraplength=790)
-        self.hint.grid(row=4, column=0, sticky="w", pady=(0, 12))
+        self.hint.grid(row=5, column=0, sticky="w", pady=(0, 12))
         actions = ttk.Frame(body)
-        actions.grid(row=5, column=0, sticky="ew")
+        actions.grid(row=6, column=0, sticky="ew")
         self.arm_button = tk.Button(actions, text="开始布防", command=self.arm, bg=BLUE, fg="white",
                                     activebackground=INK, activeforeground="white", relief="flat", bd=0,
                                     padx=26, pady=11, font=(FONT, 11, "bold"), cursor="hand2")
@@ -172,18 +189,18 @@ class GuardApp:
         self.test_button.pack(side="left")
         ttk.Button(actions, text="打开照片目录", command=self.open_folder).pack(side="right")
         stats = ttk.Frame(body)
-        stats.grid(row=6, column=0, sticky="ew", pady=(16, 6))
+        stats.grid(row=7, column=0, sticky="ew", pady=(16, 6))
         self.stats_label = ttk.Label(stats, text="本次已保存 0 张 · 尚无照片", foreground=TEAL)
         self.stats_label.pack(side="left")
         self.view_button = ttk.Button(stats, text="查看最近照片", command=self.view_latest, state="disabled")
         self.view_button.pack(side="right")
         self.log_box = tk.Text(body, height=4, relief="flat", bg="white", fg=INK, font=(FONT, 9),
                                padx=12, pady=8, state="disabled", wrap="word")
-        self.log_box.grid(row=7, column=0, sticky="nsew")
-        body.rowconfigure(7, weight=1)
+        self.log_box.grid(row=8, column=0, sticky="nsew")
+        body.rowconfigure(8, weight=1)
         ttk.Label(body, text="布防时保持相机会话，触发后请求拍照；无声音、无逐次弹窗。照片保存在所选目录。\n"
                   "锁屏 / 安全桌面会暂停拍摄。此工具用于记录，不能阻止他人操作或保护未锁定的桌面。",
-                  foreground=MUTED, wraplength=790, font=(FONT, 9)).grid(row=8, column=0, sticky="w", pady=(12, 0))
+                  foreground=MUTED, wraplength=790, font=(FONT, 9)).grid(row=9, column=0, sticky="w", pady=(12, 0))
         self.log("就绪。程序启动不会自动开启摄像头，也不会自动布防。")
 
     def log(self, text):
@@ -198,8 +215,41 @@ class GuardApp:
         self.status_label.configure(text="● " + title, fg="#FFC2BB" if error else "white")
         self.detail_label.configure(text=detail)
         self.root.title("离席守护 · " + title)
+        self.sync_desktop_pet()
         if self.controls:
-            self.controls.set_status("离席守护 · " + title, self.state != "idle")
+            self.controls.set_status("离席守护 · " + title, self.state != "idle",
+                                     self.pet_mode.get() == "patrol")
+
+    def pet_should_patrol(self):
+        return (self.pet_mode.get() == "patrol" and not getattr(self, "testing", False)
+                and self.state in ("opening", "countdown", "armed"))
+
+    def sync_desktop_pet(self):
+        try:
+            self.pet.set_visible(self.pet_should_patrol())
+        except (OSError, tk.TclError, RuntimeError) as exc:
+            self.pet_mode.set("silent")
+            try:
+                self.pet.set_visible(False)
+            except (OSError, tk.TclError, RuntimeError):
+                self.pet.close()
+            try:
+                self.save_settings()
+            except Exception:
+                pass
+            if getattr(self, "controls", None):
+                self.controls.set_status("离席守护 · 桌宠不可用，静默保护", self.state != "idle", False)
+            if hasattr(self, "log_box"):
+                self.log("桌宠未能显示，已改用静默模式：" + str(exc))
+
+    def change_pet_mode(self):
+        if self.pet_mode.get() not in ("silent", "patrol"):
+            self.pet_mode.set("silent")
+        self.sync_desktop_pet()
+        self.save_settings()
+        if self.controls:
+            self.controls.set_status("离席守护 · " + self.root.title().split(" · ", 1)[-1],
+                                     self.state != "idle", self.pet_mode.get() == "patrol")
 
     def busy(self, enabled):
         for widget in self.inputs:
@@ -225,6 +275,7 @@ class GuardApp:
         check_storage(values["folder"], values["max_bytes"], 1024**2)
         values["compatible"] = self.compatible.get()
         values["awake"] = self.prevent_sleep.get()
+        values["pet_mode"] = self.pet_mode.get()
         return values
 
     def browse(self):
@@ -352,6 +403,9 @@ class GuardApp:
                     self.show_window()
                 elif action == "toggle_window":
                     self.toggle_window()
+                elif action == "toggle_pet_mode":
+                    self.pet_mode.set("silent" if self.pet_mode.get() == "patrol" else "patrol")
+                    self.change_pet_mode()
                 elif action == "quit":
                     self.close()
                     return
@@ -508,6 +562,7 @@ class GuardApp:
         if self.controls:
             self.controls.stop()
             self.controls = None
+        self.pet.close()
         self.root.destroy()
 
 

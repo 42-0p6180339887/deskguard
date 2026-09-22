@@ -34,10 +34,25 @@ jobs:
               throw "Version metadata mismatch: $path"
             }
           }
-          foreach ($name in @('deskguard.ico', 'deskguard.png')) {
+          foreach ($name in @('deskguard.ico', 'deskguard.png', 'deskguard-pet.png')) {
             $source = (Get-FileHash -LiteralPath "assets/$name" -Algorithm SHA256).Hash
             $packaged = (Get-FileHash -LiteralPath "dist/DeskGuard/assets/$name" -Algorithm SHA256).Hash
             if ($source -ne $packaged) { throw "Packaged icon mismatch: $name" }
+          }
+          Add-Type -AssemblyName System.Drawing
+          $pet = [System.Drawing.Bitmap]::new((Resolve-Path -LiteralPath 'dist/DeskGuard/assets/deskguard-pet.png').Path)
+          try {
+            if ($pet.GetPixel(0, 0).A -ne 0) { throw 'Pet artwork must retain transparent corners.' }
+          } finally { $pet.Dispose() }
+      - name: Launcher UI smoke test (synthetic image only)
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'deskguard-self-test.json'
+          & .\dist\DeskGuard\DeskGuard.exe --self-test $report
+          if ($LASTEXITCODE -ne 0) { throw 'Launcher UI smoke test failed.' }
+          $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          if (-not $result.passed -or $result.camera_opened -or $result.input_monitor_started) {
+            throw 'Unexpected launcher self-test results.'
           }
       - name: Synthetic camera helper test (no hardware access)
         shell: pwsh

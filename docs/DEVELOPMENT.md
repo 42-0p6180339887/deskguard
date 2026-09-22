@@ -46,8 +46,10 @@ DeskGuard.exe
 assets/
     deskguard.ico
     deskguard.png
+    deskguard-pet.png
 _app/
     app.py
+    desktop_pet.py
     CameraHost.exe
     ...
 _runtime/
@@ -62,11 +64,11 @@ _runtime/
 
 ## 图标与版本
 
-`assets/deskguard.png` 是保安鹅原图，`assets/deskguard.ico` 是 Windows 图标文件。窗口和系统托盘使用同一静态 ICO；布防状态通过托盘文字提示和主窗口表达，图案中的红点不是拍照状态指示。图标由内置图像工具生成，许可说明见仓库首页。
+`assets/deskguard.png` 是保安鹅应用图标，`assets/deskguard.ico` 是 Windows 图标文件，`assets/deskguard-pet.png` 是透明桌宠素材。应用图标保持静态；布防状态通过托盘文字提示和主窗口表达，图案中的红点不是拍照状态指示。图像由内置图像工具生成，许可说明见仓库首页。
 
-构建脚本将两份图标和 `CHANGELOG.md` 纳入发布文件白名单，并通过编译器的 `/win32icon` 参数将 ICO 嵌入 `DeskGuard.exe`。添加其他资源时，应同时更新白名单及相关打包测试，避免将运行后产生的照片或配置混入发布包。
+构建脚本将应用图标、桌宠图像、`desktop_pet.py` 和 `CHANGELOG.md` 纳入发布文件白名单，并通过编译器的 `/win32icon` 参数将 ICO 嵌入 `DeskGuard.exe`。桌宠通过可选的点击穿透顶层窗口和 Tk 事件循环动画实现。添加其他资源时，应同时更新白名单及相关打包测试，避免将运行后产生的照片或配置混入发布包。
 
-`VERSION` 是版本号来源，采用三个数字分段，例如 `0.1.1`。构建脚本据此生成启动程序和摄像头辅助程序的版本元数据：文件版本为 `0.1.1.0`，产品版本为 `0.1.1`。发布新版本时同步维护 `CHANGELOG.md`，并使用对应的 `v0.1.1` 格式标签。
+`VERSION` 是版本号来源，采用三个数字分段，例如 `0.1.2`。构建脚本据此生成启动程序和摄像头辅助程序的版本元数据：文件版本为 `0.1.2.0`，产品版本为 `0.1.2`。发布新版本时同步维护 `CHANGELOG.md`，并使用对应的 `v0.1.2` 格式标签。
 
 ## 代码分工
 

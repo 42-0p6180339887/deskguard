@@ -89,6 +89,7 @@ class DesktopControls:
         self._lock = threading.Lock()
         self._text = "离席守护 · 未启用"
         self._armed = False
+        self._pet_patrol = False
         self._hwnd = None
         self._started = False
         self._icon_added = False
@@ -114,10 +115,11 @@ class DesktopControls:
             return False
         return self._started
 
-    def set_status(self, text: str, armed: bool) -> None:
+    def set_status(self, text: str, armed: bool, pet_patrol: bool = False) -> None:
         with self._lock:
             self._text = str(text)
             self._armed = bool(armed)
+            self._pet_patrol = bool(pet_patrol)
         if self._hwnd:
             self._user32.PostMessageW(self._hwnd, self._WM_STATUS, 0, 0)
 
@@ -311,8 +313,11 @@ class DesktopControls:
             with self._lock:
                 armed = self._armed
             toggle = "停止守护" if armed else "启用守护"
+            with self._lock:
+                pet_patrol = self._pet_patrol
             self._user32.AppendMenuW(menu, 0, 1, toggle + "\tCtrl+Alt+F9")
             self._user32.AppendMenuW(menu, 0, 2, "打开控制面板\tCtrl+Alt+F10")
+            self._user32.AppendMenuW(menu, 0, 4, "切换到静默保护" if pet_patrol else "开启鹅鹅巡逻")
             self._user32.AppendMenuW(menu, 0x800, 0, None)
             self._user32.AppendMenuW(menu, 0, 3, "退出离席守护")
             point = wintypes.POINT()
@@ -323,7 +328,7 @@ class DesktopControls:
                 menu, 0x100 | 0x80 | 0x02, point.x, point.y, 0, self._hwnd, None
             )
             self._user32.PostMessageW(self._hwnd, 0, 0, 0)
-            command = {1: "toggle", 2: "show", 3: "quit"}.get(selected)
+            command = {1: "toggle", 2: "show", 3: "quit", 4: "toggle_pet_mode"}.get(selected)
             if command:
                 self._dispatch(command)
         finally:

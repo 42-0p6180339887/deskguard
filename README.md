@@ -6,7 +6,7 @@
 
 **A manually armed, local-only Windows activity-triggered camera helper. No keystroke content, audio recording, or uploads.**
 
-**鹅已掌握证据。** 保安鹅的工作态度是：“你继续，鹅看着呢。” v0.1.1 将这个图标用于启动程序、窗口和系统托盘；完整变更见 [更新记录](CHANGELOG.md)。图标由内置图像工具为本项目生成。
+**鹅已掌握证据。** 保安鹅的工作态度是：“你继续，鹅看着呢。” 现在可以选择桌面巡逻或静默保护。巡逻时桌面鹅沿屏幕边缘踱步；静默时隐藏桌宠，防护照常运行。完整变更见 [更新记录](CHANGELOG.md)。桌宠图像与应用图标均由内置图像工具为本项目生成。
 
 ## 下载与使用
 
@@ -24,6 +24,7 @@
 - 鼠标、键盘活动触发拍照；触屏支持需在目标设备测试。
 - 默认过滤 Windows 标记的模拟输入，尽量减少 Codex 等自动化工具触发；也提供会话活动兼容模式。
 - 托盘菜单控制启停、显示窗口和退出。**Ctrl + Alt + F9** 布防 / 停止，**Ctrl + Alt + F10** 显示 / 隐藏；快捷键冲突时可使用托盘菜单。
+- 桌宠模式可选“静默保护”或“鹅鹅巡逻”。鹅只在实际布防时出现，沿主屏幕边缘巡逻；它不接收鼠标点击、不抢键盘焦点，不影响 Codex 自动化输入，也不触发拍照。
 - 保安鹅图标保持静态；将鼠标停在托盘图标上查看文字状态，或打开主窗口确认布防状态。图案中的红点是装饰，不代表摄像头正在拍摄。
 - 普通控制窗口，不置顶；点击窗口右上角 × 会完全退出。
 - 照片按日期分目录，默认容量上限 **2 GiB**。达到上限或磁盘空间不足时停止，不自动删除旧照片。
@@ -70,4 +71,4 @@ python build_release.py --output dist
 
 ## 许可
 
-项目源码、文档及为本项目生成的保安鹅图标（`assets/deskguard.png`、`assets/deskguard.ico`）均按 [MIT License](LICENSE) 提供。图标由内置图像工具生成。便携包中 Python、Tcl/Tk 及其他运行时组件保留各自的许可；见 [第三方声明](THIRD_PARTY_NOTICES.md)。
+项目源码、文档及为本项目生成的保安鹅图标与桌宠图像（`assets/deskguard.png`、`assets/deskguard.ico`、`assets/deskguard-pet.png`）均按 [MIT License](LICENSE) 提供。图像由内置图像工具生成。便携包中 Python、Tcl/Tk 及其他运行时组件保留各自的许可；见 [第三方声明](THIRD_PARTY_NOTICES.md)。

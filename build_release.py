@@ -20,7 +20,7 @@ import zipfile
 
 
 APP_MODULES = (
-    "app.py", "guard_core.py", "windows_input.py", "windows_tray.py", "camera_worker.py",
+    "app.py", "guard_core.py", "windows_input.py", "windows_tray.py", "camera_worker.py", "desktop_pet.py",
 )
 RUNTIME_FILES = (
     "python.exe", "pythonw.exe", "python3.dll", "python312.dll",
@@ -32,7 +32,7 @@ DOCUMENTS = (
     "docs/USER_GUIDE.zh-CN.md", "docs/VALIDATION.zh-CN.md",
     "docs/DEVELOPMENT.md", "VERSION",
 )
-ASSETS = ("assets/deskguard.ico", "assets/deskguard.png")
+ASSETS = ("assets/deskguard.ico", "assets/deskguard.png", "assets/deskguard-pet.png")
 _EXCLUDED_DIRS = {
     "site-packages", "__pycache__", "test", "tests", "idlelib", "ensurepip",
     "venv", "turtledemo", "photos", "logs", ".git",
