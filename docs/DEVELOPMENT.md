@@ -43,6 +43,9 @@ python build_release.py --output dist
 
 ```text
 DeskGuard.exe
+assets/
+    deskguard.ico
+    deskguard.png
 _app/
     app.py
     CameraHost.exe
@@ -56,6 +59,14 @@ _runtime/
 ```
 
 发布时保留完整目录及第三方许可文件。生成的二进制、运行环境、`dist/`、照片、配置和自检结果不应提交到源码仓库。GitHub Actions 会测试、构建并上传工作流产物；正式的 Releases 由维护者创建，工作流本身只有仓库读取权限。
+
+## 图标与版本
+
+`assets/deskguard.png` 是保安鹅原图，`assets/deskguard.ico` 是 Windows 图标文件。窗口和系统托盘使用同一静态 ICO；布防状态通过托盘文字提示和主窗口表达，图案中的红点不是拍照状态指示。图标由内置图像工具生成，许可说明见仓库首页。
+
+构建脚本将两份图标和 `CHANGELOG.md` 纳入发布文件白名单，并通过编译器的 `/win32icon` 参数将 ICO 嵌入 `DeskGuard.exe`。添加其他资源时，应同时更新白名单及相关打包测试，避免将运行后产生的照片或配置混入发布包。
+
+`VERSION` 是版本号来源，采用三个数字分段，例如 `0.1.1`。构建脚本据此生成启动程序和摄像头辅助程序的版本元数据：文件版本为 `0.1.1.0`，产品版本为 `0.1.1`。发布新版本时同步维护 `CHANGELOG.md`，并使用对应的 `v0.1.1` 格式标签。
 
 ## 代码分工
 

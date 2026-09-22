@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
 import struct
 import subprocess
@@ -27,10 +28,11 @@ RUNTIME_FILES = (
 )
 RUNTIME_TREES = ("Lib", "DLLs", "tcl")
 DOCUMENTS = (
-    "LICENSE", "THIRD_PARTY_NOTICES.md", "README.md",
+    "LICENSE", "THIRD_PARTY_NOTICES.md", "README.md", "CHANGELOG.md",
     "docs/USER_GUIDE.zh-CN.md", "docs/VALIDATION.zh-CN.md",
     "docs/DEVELOPMENT.md", "VERSION",
 )
+ASSETS = ("assets/deskguard.ico", "assets/deskguard.png")
 _EXCLUDED_DIRS = {
     "site-packages", "__pycache__", "test", "tests", "idlelib", "ensurepip",
     "venv", "turtledemo", "photos", "logs", ".git",
@@ -127,6 +129,12 @@ def _compile_native(source_dir: Path, package_dir: Path) -> list[Path]:
     _regular_file(compiler)
     for name in ("CameraHost.cs", "Launcher.cs"):
         _regular_file(source_dir / name)
+    icon = source_dir / "assets" / "deskguard.ico"
+    _regular_file(icon)
+    _regular_file(source_dir / "VERSION")
+    version = (source_dir / "VERSION").read_text(encoding="utf-8").strip()
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) or any(int(part) > 65534 for part in version.split(".")):
+        raise BuildError("VERSION must contain a three-part numeric version (each part 0..65534).")
     camera_refs = ["System.dll", "System.Core.dll", "System.Drawing.dll", "System.Windows.Forms.dll"]
     local_refs = [framework / name for name in (
         "System.Runtime.dll", "System.Threading.Tasks.dll", "System.Runtime.InteropServices.WindowsRuntime.dll",
@@ -145,20 +153,32 @@ def _compile_native(source_dir: Path, package_dir: Path) -> list[Path]:
         + ["/r:" + reference for reference in camera_refs] + [str(source_dir / "CameraHost.cs")],
         [str(compiler), "/nologo", "/target:winexe", "/platform:x64", "/optimize+",
          "/r:System.Windows.Forms.dll", "/out:" + str(package_dir / "DeskGuard.exe"),
+         "/win32icon:" + str(icon),
          str(source_dir / "Launcher.cs")],
     ]
-    for command in commands:
-        try:
-            subprocess.run(command, check=True, capture_output=True, text=True, errors="replace")
-        except subprocess.CalledProcessError as exc:
-            raise BuildError("Native compilation failed:\n" + exc.stdout + exc.stderr) from exc
+    # Derive executable metadata from the same VERSION shipped in the package.
+    # Keep generated source outside the payload and remove it after compilation.
+    with tempfile.TemporaryDirectory(prefix="deskguard-version-") as temporary:
+        assembly_info = Path(temporary) / "AssemblyInfo.cs"
+        assembly_info.write_text(
+            f'[assembly: System.Reflection.AssemblyVersion("{version}.0")]\n'
+            f'[assembly: System.Reflection.AssemblyFileVersion("{version}.0")]\n'
+            f'[assembly: System.Reflection.AssemblyInformationalVersion("{version}")]\n'
+            '[assembly: System.Reflection.AssemblyProduct("DeskGuard")]\n',
+            encoding="utf-8",
+        )
+        for command in commands:
+            try:
+                subprocess.run(command + [str(assembly_info)], check=True, capture_output=True, text=True, errors="replace")
+            except subprocess.CalledProcessError as exc:
+                raise BuildError("Native compilation failed:\n" + exc.stdout + exc.stderr) from exc
     return [camera_path, Path("DeskGuard.exe")]
 
 
 def _payload_path_allowed(relative: Path) -> bool:
     if relative.is_absolute() or ".." in relative.parts or not relative.parts:
         return False
-    if relative.as_posix() in DOCUMENTS or relative == Path("DeskGuard.exe"):
+    if relative.as_posix() in (*DOCUMENTS, *ASSETS) or relative == Path("DeskGuard.exe"):
         return True
     if relative.parts[0] == "_app":
         return len(relative.parts) == 2 and relative.name in (*APP_MODULES, "CameraHost.exe")
@@ -216,6 +236,10 @@ def build_release(output_dir: Path, python_root: Path, source_dir: Path | None =
         for name in APP_MODULES:
             relative = Path("_app") / name
             _copy_file(source_dir / name, package_dir / relative)
+            manifest.append(relative)
+        for name in ASSETS:
+            relative = Path(name)
+            _copy_file(source_dir / relative, package_dir / relative)
             manifest.append(relative)
         manifest.extend(_compile_native(source_dir, package_dir))
         for name in DOCUMENTS:

@@ -1,4 +1,6 @@
 """Offline tray recovery tests; all native calls and worker threads are mocked."""
+import os
+from pathlib import Path
 import unittest
 from unittest.mock import Mock, call
 
@@ -72,6 +74,68 @@ class TrayRecoveryTests(unittest.TestCase):
         self.assertTrue(controls._stop_requested.is_set())
         self.assertIn("simulated shell failure", controls.error)
         controls._user32.PostQuitMessage.assert_called_once_with(0)
+
+
+@unittest.skipUnless(os.name == "nt", "Native structure layout is Windows-only")
+class TrayIconLifetimeTests(unittest.TestCase):
+    def controls(self, loaded_icon=789, add_succeeds=True):
+        controls = DesktopControls(Mock(), icon_path=Path("assets") / "deskguard.ico")
+        controls._setup_apis = Mock()
+        controls._user32 = Mock()
+        controls._kernel32 = Mock()
+        controls._shell32 = Mock()
+        controls._kernel32.GetModuleHandleW.return_value = 1
+        controls._user32.RegisterClassW.return_value = 1
+        controls._user32.RegisterWindowMessageW.return_value = 0xC123
+        controls._user32.CreateWindowExW.return_value = 123
+        controls._user32.GetSystemMetrics.return_value = 16
+        controls._user32.LoadImageW.return_value = loaded_icon
+        controls._user32.LoadIconW.return_value = 456
+        controls._user32.GetMessageW.side_effect = [1, 1, 0]
+        controls._user32.DispatchMessageW.side_effect = lambda message: controls._update_icon()
+        events = []
+
+        def notify(operation, data):
+            events.append(("notify", operation, data._obj.hIcon))
+            return add_succeeds
+
+        controls._shell32.Shell_NotifyIconW.side_effect = notify
+        controls._user32.DestroyIcon.side_effect = lambda icon: events.append(("destroy", icon)) or True
+        return controls, events
+
+    def test_custom_icon_is_reused_and_freed_after_tray_removal(self):
+        controls, events = self.controls()
+        controls._run()
+        controls._user32.LoadImageW.assert_called_once_with(
+            None, str(Path("assets") / "deskguard.ico"), 1, 16, 16, 0x10
+        )
+        controls._user32.LoadIconW.assert_not_called()
+        self.assertEqual(events, [
+            ("notify", 0, 789), ("notify", 1, 789), ("notify", 1, 789),
+            ("notify", 2, None), ("destroy", 789),
+        ])
+        controls._release_custom_icon()
+        controls._user32.DestroyIcon.assert_called_once_with(789)
+        self.assertIsNone(controls._custom_icon)
+
+    def test_missing_or_invalid_artwork_keeps_stock_icon_without_destroying_it(self):
+        controls, events = self.controls(loaded_icon=None)
+        controls._run()
+        controls._user32.LoadImageW.assert_called_once()
+        self.assertEqual(events, [
+            ("notify", 0, 456), ("notify", 1, 456), ("notify", 1, 456),
+            ("notify", 2, None),
+        ])
+        controls._user32.DestroyIcon.assert_not_called()
+        self.assertEqual(controls.error, "")
+
+    def test_failed_tray_creation_still_releases_loaded_icon(self):
+        controls, events = self.controls(add_succeeds=False)
+        controls._run()
+        self.assertEqual(events, [("notify", 0, 789), ("destroy", 789)])
+        controls._user32.DestroyIcon.assert_called_once_with(789)
+        self.assertFalse(controls.running)
+        self.assertIn("无法创建", controls.error)
 
 
 if __name__ == "__main__":

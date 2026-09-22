@@ -24,6 +24,21 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Build portable Windows package
         run: python build_release.py --output dist
+      - name: Verify executable version and icon assets
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath VERSION -Raw).Trim()
+          foreach ($path in @('dist/DeskGuard/DeskGuard.exe', 'dist/DeskGuard/_app/CameraHost.exe')) {
+            $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path -LiteralPath $path).Path)
+            if ($info.FileVersion -ne "$version.0" -or $info.ProductVersion -ne $version) {
+              throw "Version metadata mismatch: $path"
+            }
+          }
+          foreach ($name in @('deskguard.ico', 'deskguard.png')) {
+            $source = (Get-FileHash -LiteralPath "assets/$name" -Algorithm SHA256).Hash
+            $packaged = (Get-FileHash -LiteralPath "dist/DeskGuard/assets/$name" -Algorithm SHA256).Hash
+            if ($source -ne $packaged) { throw "Packaged icon mismatch: $name" }
+          }
       - name: Synthetic camera helper test (no hardware access)
         shell: pwsh
         run: |

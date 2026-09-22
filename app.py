@@ -21,6 +21,7 @@ from windows_tray import DesktopControls
 APP_DIR = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 if APP_DIR.name == "_app":
     APP_DIR = APP_DIR.parent
+ICON_PATH = APP_DIR / "assets" / "deskguard.ico"
 BG = "#EFF4F9"
 INK = "#142D4E"
 MUTED = "#53677C"
@@ -49,6 +50,10 @@ class GuardApp:
         self.pause_seen = False
         self.closing = False
         root.title("离席守护 · 未布防")
+        try:
+            root.iconbitmap(default=str(ICON_PATH))
+        except (tk.TclError, OSError):
+            pass  # Keep Tk's default icon if optional artwork is unavailable.
         root.configure(bg=BG)
         root.geometry("900x735")
         root.minsize(820, 700)
@@ -68,7 +73,7 @@ class GuardApp:
         root.geometry(f"{width}x{height}")
         root.minsize(min(820, width), min(700, height))
         if poll:
-            self.controls = DesktopControls(self.control_events.put)
+            self.controls = DesktopControls(self.control_events.put, icon_path=ICON_PATH)
             if not self.controls.start():
                 self.log("托盘控制不可用，请使用主窗口操作。" + (self.controls.error or ""))
                 self.controls.stop()

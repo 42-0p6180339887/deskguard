@@ -76,8 +76,10 @@ class DesktopControls:
     _HOTKEY_TOGGLE = 1
     _HOTKEY_SHOW = 2
 
-    def __init__(self, callback: Callable[[str], None]):
+    def __init__(self, callback: Callable[[str], None], icon_path: os.PathLike[str] | str | None = None):
         self._callback = callback
+        self._icon_path = os.fspath(icon_path) if icon_path is not None else None
+        self._custom_icon = None
         self.error = ""
         self.hotkeys_available = False
         self.hotkey_errors: list[str] = []
@@ -150,6 +152,9 @@ class DesktopControls:
             (self._user32, "RegisterHotKey", [wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT], wintypes.BOOL),
             (self._user32, "UnregisterHotKey", [wintypes.HWND, ctypes.c_int], wintypes.BOOL),
             (self._user32, "LoadIconW", [wintypes.HINSTANCE, wintypes.LPCWSTR], wintypes.HICON),
+            (self._user32, "LoadImageW", [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT, ctypes.c_int, ctypes.c_int, wintypes.UINT], wintypes.HANDLE),
+            (self._user32, "DestroyIcon", [wintypes.HICON], wintypes.BOOL),
+            (self._user32, "GetSystemMetrics", [ctypes.c_int], ctypes.c_int),
             (self._user32, "RegisterWindowMessageW", [wintypes.LPCWSTR], wintypes.UINT),
             (self._user32, "CreatePopupMenu", [], wintypes.HMENU),
             (self._user32, "AppendMenuW", [wintypes.HMENU, wintypes.UINT, ctypes.c_size_t, wintypes.LPCWSTR], wintypes.BOOL),
@@ -187,6 +192,7 @@ class DesktopControls:
                 raise ctypes.WinError(ctypes.get_last_error())
             if self._stop_requested.is_set():
                 return
+            self._load_custom_icon()
             if not self._update_icon(add=True):
                 raise RuntimeError("无法创建 Windows 通知区域图标。")
             for identifier, key, label in (
@@ -230,9 +236,24 @@ class DesktopControls:
                     self._icon_added = False
                 self._user32.DestroyWindow(self._hwnd)
                 self._hwnd = None
+            self._release_custom_icon()
             if registered_class:
                 self._user32.UnregisterClassW(self._class_name, instance)
             self._ready.set()
+
+    def _load_custom_icon(self) -> None:
+        if self._icon_path and not self._custom_icon:
+            width = self._user32.GetSystemMetrics(49) or 16  # SM_CXSMICON
+            height = self._user32.GetSystemMetrics(50) or 16  # SM_CYSMICON
+            # File icons are private handles: never use LR_SHARED here.
+            self._custom_icon = self._user32.LoadImageW(
+                None, self._icon_path, 1, width, height, 0x10  # IMAGE_ICON, LR_LOADFROMFILE
+            )
+
+    def _release_custom_icon(self) -> None:
+        if self._custom_icon:
+            self._user32.DestroyIcon(self._custom_icon)
+            self._custom_icon = None
 
     def _update_icon(self, add: bool = False) -> bool:
         with self._lock:
@@ -243,8 +264,12 @@ class DesktopControls:
         data.uID = 1
         data.uFlags = 0x01 | 0x02 | 0x04  # message, icon, tooltip; no balloon
         data.uCallbackMessage = self._WM_TRAY
-        stock_id = 32515 if armed else 32516  # warning / information
-        data.hIcon = self._user32.LoadIconW(None, ctypes.cast(ctypes.c_void_p(stock_id), wintypes.LPCWSTR))
+        # The artwork stays constant; the tooltip/menu describe actual state.
+        if self._custom_icon:
+            data.hIcon = self._custom_icon
+        else:
+            stock_id = 32515 if armed else 32516  # warning / information
+            data.hIcon = self._user32.LoadIconW(None, ctypes.cast(ctypes.c_void_p(stock_id), wintypes.LPCWSTR))
         # Truncate by UTF-16 units so emoji cannot overflow the native buffer.
         encoded = text.encode("utf-16-le", errors="replace")[:254]
         data.szTip = encoded.decode("utf-16-le", errors="ignore")

@@ -25,6 +25,10 @@ class ReleaseBuildTests(unittest.TestCase):
             path = self.source / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("License or documentation content", encoding="utf-8")
+        for name in builder.ASSETS:
+            path = self.source / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"public app icon")
         for name in builder.RUNTIME_FILES:
             (self.python / name).write_bytes(b"runtime file")
         pe = bytearray(134)
@@ -56,6 +60,7 @@ class ReleaseBuildTests(unittest.TestCase):
         (self.source / "Photos" / "private.jpg").write_bytes(b"private")
         (self.source / "settings.json").write_text("private settings", encoding="utf-8")
         (self.source / "CameraHost.exe").write_bytes(b"stale untrusted binary")
+        (self.source / "assets" / "private.png").write_bytes(b"private image")
         for relative in ("Lib/site-packages/extra.py", "Lib/__pycache__/os.pyc", "Lib/test/test_os.py", "Lib/Photos/private.jpg", "Lib/settings.json"):
             path = self.python / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -68,6 +73,8 @@ class ReleaseBuildTests(unittest.TestCase):
             self.assertIn("DeskGuard/_runtime/Lib/os.py", names)
             self.assertIn("DeskGuard/LICENSE", names)
             self.assertIn("DeskGuard/THIRD_PARTY_NOTICES.md", names)
+            for name in builder.ASSETS:
+                self.assertEqual(archive.read("DeskGuard/" + name), b"public app icon")
             self.assertIn("DeskGuard/_runtime/LICENSE.txt", names)
             self.assertIn("DeskGuard/_runtime/tcl/tcl8.6/license.terms", names)
             self.assertEqual(archive.read("DeskGuard/_app/CameraHost.exe"), b"compiled camera helper")
@@ -105,6 +112,8 @@ class ReleaseBuildTests(unittest.TestCase):
             self.assertEqual(zipped.namelist(), ["DeskGuard/DeskGuard.exe"])
         with self.assertRaisesRegex(builder.BuildError, "unexpected archive entry"):
             builder._create_archive(package, [Path("Photos/private.jpg")], self.output / "refused.zip")
+        with self.assertRaisesRegex(builder.BuildError, "unexpected archive entry"):
+            builder._create_archive(package, [Path("assets/private.png")], self.output / "refused-asset.zip")
 
 
 if __name__ == "__main__":
