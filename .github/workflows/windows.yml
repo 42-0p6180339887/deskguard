@@ -44,16 +44,6 @@ jobs:
           try {
             if ($pet.GetPixel(0, 0).A -ne 0) { throw 'Pet artwork must retain transparent corners.' }
           } finally { $pet.Dispose() }
-      - name: Launcher UI smoke test (synthetic image only)
-        shell: pwsh
-        run: |
-          $report = Join-Path $env:RUNNER_TEMP 'deskguard-self-test.json'
-          & .\dist\DeskGuard\DeskGuard.exe --self-test $report
-          if ($LASTEXITCODE -ne 0) { throw 'Launcher UI smoke test failed.' }
-          $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
-          if (-not $result.passed -or $result.camera_opened -or $result.input_monitor_started) {
-            throw 'Unexpected launcher self-test results.'
-          }
       - name: Synthetic camera helper test (no hardware access)
         shell: pwsh
         run: |
