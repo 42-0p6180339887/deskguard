@@ -137,6 +137,45 @@ class AppCleanupTests(unittest.TestCase):
         self.assertIs(guard.process, original_process)
 
 
+class PetPreviewTests(unittest.TestCase):
+    def setUp(self):
+        self.guard = fake_app()
+        self.guard.pet = Mock()
+        self.guard.pet_preview_after = None
+        for name, value in (("pet_size", "large"), ("pet_speed", "normal"),
+                            ("pet_gentle", False), ("pet_mode", "silent")):
+            setattr(self.guard, name, Mock(get=Mock(return_value=value)))
+
+    def test_preview_expires_without_arming_or_starting_camera(self):
+        guard = self.guard
+        with patch.object(app, "InputMonitor") as monitor, patch.object(app.mp, "Process") as process:
+            guard.preview_pet()
+            guard.pet.set_visible.assert_called_once_with(True)
+            delay, callback = guard.root.after.call_args.args
+            self.assertEqual(delay, 6000)
+            callback()
+            self.assertEqual(guard.pet.set_visible.call_args_list, [call(True), call(False)])
+            self.assertEqual(guard.state, "idle")
+            self.assertIsNone(guard.pet_preview_after)
+            monitor.assert_not_called()
+            process.assert_not_called()
+
+    def test_mode_change_cancels_preview_and_hides_pet(self):
+        guard = self.guard
+        guard.preview_pet()
+        timer = guard.pet_preview_after
+        guard.change_pet_mode()
+        guard.root.after_cancel.assert_called_once_with(timer)
+        guard.pet.set_visible.assert_called_with(False)
+        self.assertIsNone(guard.pet_preview_after)
+
+    def test_preview_is_ignored_while_armed(self):
+        self.guard.state = "armed"
+        self.guard.preview_pet()
+        self.guard.pet.set_visible.assert_not_called()
+        self.guard.root.after.assert_not_called()
+
+
 class AppSettingsTests(unittest.TestCase):
     def test_non_object_settings_are_ignored_without_overwriting_defaults(self):
         with tempfile.TemporaryDirectory(prefix="deskguard-settings-test-") as folder:

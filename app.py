@@ -23,7 +23,9 @@ APP_DIR = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path
 if APP_DIR.name == "_app":
     APP_DIR = APP_DIR.parent
 ICON_PATH = APP_DIR / "assets" / "deskguard.ico"
-BG = "#EFF4F9"
+BG = "#EEF3F8"
+WHITE = "#FFFFFF"
+ORANGE = "#F5A34A"
 INK = "#142D4E"
 MUTED = "#53677C"
 BLUE = "#235F9A"
@@ -57,8 +59,8 @@ class GuardApp:
         except (tk.TclError, OSError):
             pass  # Keep Tk's default icon if optional artwork is unavailable.
         root.configure(bg=BG)
-        root.geometry("900x735")
-        root.minsize(820, 700)
+        root.geometry("820x760")
+        root.minsize(760, 700)
         root.protocol("WM_DELETE_WINDOW", self.close)
         self.folder = tk.StringVar(value=str(APP_DIR / "Photos"))
         self.camera = tk.StringVar(value="0")
@@ -68,13 +70,17 @@ class GuardApp:
         self.prevent_sleep = tk.BooleanVar(value=True)
         self.compatible = tk.BooleanVar(value=False)
         self.pet_mode = tk.StringVar(value="silent")
+        self.pet_size = tk.StringVar(value="large")
+        self.pet_speed = tk.StringVar(value="normal")
+        self.pet_gentle = tk.BooleanVar(value=False)
+        self.pet_preview_after = None
         self.load_settings()
         self.build_ui()
         root.update_idletasks()
-        width = min(max(900, root.winfo_reqwidth() + 20), root.winfo_screenwidth() - 60)
-        height = min(max(735, root.winfo_reqheight() + 20), root.winfo_screenheight() - 90)
+        width = min(max(820, root.winfo_reqwidth() + 20), root.winfo_screenwidth() - 60)
+        height = min(max(760, root.winfo_reqheight() + 20), root.winfo_screenheight() - 90)
         root.geometry(f"{width}x{height}")
-        root.minsize(min(820, width), min(700, height))
+        root.minsize(min(760, width), min(700, height))
         if poll:
             self.controls = DesktopControls(self.control_events.put, icon_path=ICON_PATH)
             if not self.controls.start():
@@ -98,110 +104,185 @@ class GuardApp:
                     getattr(self, key).set(data[key])
             if data.get("pet_mode") in ("silent", "patrol"):
                 self.pet_mode.set(data["pet_mode"])
+            for key, choices in (("pet_size", ("small", "medium", "large")),
+                                 ("pet_speed", ("slow", "normal", "brisk"))):
+                if data.get(key) in choices:
+                    getattr(self, key).set(data[key])
+            if isinstance(data.get("pet_gentle"), bool):
+                self.pet_gentle.set(data["pet_gentle"])
         except (OSError, ValueError, TypeError):
             pass
 
     def save_settings(self):
         data = {key: getattr(self, key).get() for key in
-                ("folder", "camera", "interval", "delay", "limit", "prevent_sleep", "compatible", "pet_mode")}
+                ("folder", "camera", "interval", "delay", "limit", "prevent_sleep", "compatible", "pet_mode", "pet_size", "pet_speed", "pet_gentle")}
         try:
             self.settings_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError:
             self.log("设置未保存：程序目录不可写。本次布防仍可使用。")
 
     def build_ui(self):
+        # A calm duty desk: navy status, white working surface, goose-beak action.
         style = ttk.Style(self.root)
         style.theme_use("clam")
         style.configure("TFrame", background=BG)
         style.configure("TLabel", background=BG, foreground=INK, font=(FONT, 10))
-        style.configure("TButton", font=(FONT, 10), padding=(14, 9))
-        style.configure("TEntry", padding=6, font=(FONT, 10))
-        style.configure("TSpinbox", padding=6, font=(FONT, 10))
-        style.configure("TCheckbutton", background=BG, font=(FONT, 10), foreground=INK)
-        style.map("TCheckbutton", background=[("active", BG)])
-        body = ttk.Frame(self.root, padding=(28, 22, 28, 18))
+        style.configure("TButton", font=(FONT, 10), padding=(12, 7), background=WHITE,
+                        foreground=INK, bordercolor="#CCD7E2", focuscolor=BLUE)
+        style.map("TButton", background=[("active", "#E3ECF5")])
+        style.configure("Stop.TButton", background="#FFD8D2", foreground="#8B2626")
+        style.map("Stop.TButton", background=[("disabled", WHITE), ("active", "#FFC2BB")],
+                  foreground=[("disabled", "#9099A4")])
+        style.configure("TEntry", padding=5, font=(FONT, 10))
+        style.configure("TSpinbox", padding=5, font=(FONT, 10))
+        style.configure("Paper.TFrame", background=WHITE)
+        style.configure("Paper.TLabel", background=WHITE, foreground=INK, font=(FONT, 10))
+        for kind in ("TCheckbutton", "TRadiobutton"):
+            style.configure(kind, background=WHITE, font=(FONT, 10), foreground=INK)
+            style.map(kind, background=[("active", "#EDF3F9")])
+        style.configure("TNotebook", background=BG, borderwidth=0)
+        style.configure("TNotebook.Tab", font=(FONT, 10), padding=(16, 7), background=BG)
+        style.map("TNotebook.Tab", background=[("selected", WHITE)], foreground=[("selected", BLUE)])
+        body = ttk.Frame(self.root, padding=(22, 12, 22, 12))
         body.pack(fill="both", expand=True)
         body.columnconfigure(0, weight=1)
-        tk.Label(body, text="离席守护", bg=BG, fg=INK,
-                 font=(FONT, 25, "bold"), anchor="w").grid(row=0, column=0, sticky="ew")
-        ttk.Label(body, text="让任务继续运行，为电脑上的输入活动留下一张照片。",
-                  foreground=MUTED).grid(row=1, column=0, sticky="w", pady=(3, 17))
-        status = tk.Frame(body, bg=INK, padx=20, pady=16)
-        status.grid(row=2, column=0, sticky="ew")
-        self.status_label = tk.Label(status, text="● 未布防", bg=INK, fg="white",
-                                     font=(FONT, 19, "bold"), anchor="w")
-        self.status_label.pack(fill="x")
-        self.detail_label = tk.Label(status, text="摄像头未启用。先测试拍照，再开始布防。", bg=INK,
-                                     fg="#CBDDED", font=(FONT, 10), anchor="w", justify="left", wraplength=740)
-        self.detail_label.pack(fill="x", pady=(5, 0))
-        options = ttk.Frame(body)
-        options.grid(row=3, column=0, sticky="ew", pady=(17, 10))
+        heading = ttk.Frame(body)
+        heading.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        try:
+            artwork = tk.PhotoImage(file=str(APP_DIR / "assets" / "deskguard-pet.png"))
+            mark_size = max(44, round(float(self.root.tk.call("tk", "scaling")) * 24))
+            self.brand_image = artwork.subsample(max(1, math.ceil(artwork.width() / mark_size)),
+                                                max(1, math.ceil(artwork.height() / mark_size)))
+            tk.Label(heading, image=self.brand_image, bg=BG).pack(side="left", padx=(0, 10))
+        except (tk.TclError, OSError):
+            pass
+        tk.Label(heading, text="保安鹅值班台", bg=BG, fg=INK,
+                 font=(FONT, 21, "bold")).pack(side="left")
+        tk.Label(heading, text="DESKGUARD  /  离席守护", bg=BG, fg=MUTED,
+                 font=("Segoe UI", 9)).pack(side="right", anchor="s", pady=7)
+
+        status = tk.Frame(body, bg=INK, padx=20, pady=12)
+        status.grid(row=1, column=0, sticky="ew")
+        status.columnconfigure(0, weight=1)
+        self.status_label = tk.Label(status, text="● 未布防 · 鹅鹅待命", bg=INK, fg=WHITE,
+                                     font=(FONT, 18, "bold"), anchor="w")
+        self.status_label.grid(row=0, column=0, sticky="ew")
+        self.detail_label = tk.Label(status, text="摄像头未启用。首次使用，先测试拍照确认取景。", bg=INK,
+                                     fg="#D0DEEC", font=(FONT, 10), anchor="w", justify="left", wraplength=660)
+        self.detail_label.grid(row=1, column=0, sticky="ew", pady=(6, 13))
+        actions = tk.Frame(status, bg=INK)
+        actions.grid(row=2, column=0, sticky="ew")
+        self.arm_button = tk.Button(actions, text="开始布防 →", command=self.arm, bg=ORANGE, fg=INK,
+                                    activebackground="#FFC277", activeforeground=INK, relief="flat", bd=0,
+                                    padx=22, pady=7, font=(FONT, 11, "bold"), cursor="hand2")
+        self.arm_button.pack(side="left")
+        self.stop_button = ttk.Button(actions, text="停止守护", command=self.stop, state="disabled", style="Stop.TButton")
+        self.stop_button.pack(side="left", padx=9)
+        self.test_button = ttk.Button(actions, text="测试拍照", command=self.test_photo)
+        self.test_button.pack(side="right")
+
+        modes = tk.Frame(body, bg=WHITE, padx=14, pady=8)
+        modes.grid(row=2, column=0, sticky="ew", pady=(12, 10))
+        self.pet_widgets = []
+        for col, (label, value, caption) in enumerate((
+                ("静默保护", "silent", "只在托盘值班，桌面不显示鹅"),
+                ("鹅鹅巡逻", "patrol", "守护时沿屏幕底部走动，不挡点击"))):
+            modes.columnconfigure(col, weight=1)
+            card = tk.Frame(modes, bg=WHITE)
+            card.grid(row=0, column=col, sticky="ew", padx=(0, 12))
+            radio = ttk.Radiobutton(card, text=label, variable=self.pet_mode, value=value,
+                                    command=self.change_pet_mode)
+            radio.pack(anchor="w")
+            tk.Label(card, text=caption, bg=WHITE, fg=MUTED, font=(FONT, 9)).pack(anchor="w", padx=23, pady=(3, 0))
+            self.pet_widgets.append(radio)
+
+        notebook = ttk.Notebook(body)
+        notebook.grid(row=3, column=0, sticky="ew")
+        options = ttk.Frame(notebook, style="Paper.TFrame", padding=(14, 12))
+        appearance = ttk.Frame(notebook, style="Paper.TFrame", padding=(14, 12))
+        notebook.add(options, text="守护设置")
+        notebook.add(appearance, text="巡逻外观")
         options.columnconfigure(1, weight=1)
-        ttk.Label(options, text="照片位置").grid(row=0, column=0, sticky="w", padx=(0, 14))
+        ttk.Label(options, text="照片位置", style="Paper.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 12))
         self.folder_entry = ttk.Entry(options, textvariable=self.folder)
         self.folder_entry.grid(row=0, column=1, sticky="ew")
         self.browse_button = ttk.Button(options, text="选择…", command=self.browse)
         self.browse_button.grid(row=0, column=2, padx=(8, 0))
-        numbers = ttk.Frame(options)
-        numbers.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(12, 5))
         self.inputs = [self.folder_entry, self.browse_button]
+        numbers = ttk.Frame(options, style="Paper.TFrame")
+        numbers.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(10, 6))
         for i, (name, var, lo, hi) in enumerate([
-            ("摄像头编号", self.camera, 0, 10), ("最短间隔 / 秒", self.interval, 1, 3600),
+            ("摄像头编号", self.camera, 0, 10), ("拍照间隔 / 秒", self.interval, 1, 3600),
             ("离开倒计时 / 秒", self.delay, 3, 300), ("照片上限 / GB", self.limit, 1, 100)]):
             numbers.columnconfigure(i, weight=1)
-            box = ttk.Frame(numbers)
-            box.grid(row=0, column=i, sticky="ew", padx=(0, 18 if i < 3 else 0))
-            ttk.Label(box, text=name, foreground=MUTED).pack(anchor="w", pady=(0, 5))
-            widget = ttk.Spinbox(box, from_=lo, to=hi, textvariable=var, width=10)
+            box = ttk.Frame(numbers, style="Paper.TFrame")
+            box.grid(row=0, column=i, sticky="ew", padx=(0, 12 if i < 3 else 0))
+            ttk.Label(box, text=name, style="Paper.TLabel", foreground=MUTED).pack(anchor="w", pady=(0, 4))
+            widget = ttk.Spinbox(box, from_=lo, to=hi, textvariable=var, width=8)
             widget.pack(fill="x")
             self.inputs.append(widget)
-        self.awake_check = ttk.Checkbutton(options, text="布防期间保持电脑唤醒（允许屏幕熄灭，不修改系统设置）",
+        self.awake_check = ttk.Checkbutton(options, text="守护时保持电脑唤醒，让 Codex 继续运行（允许屏幕熄灭）",
                                           variable=self.prevent_sleep)
-        self.awake_check.grid(row=2, column=0, columnspan=3, sticky="w", pady=(8, 0))
-        self.compat_check = ttk.Checkbutton(options, text="兼容模式：检测会话活动，适合触屏测试；也可能被 Codex 的操作触发",
+        self.awake_check.grid(row=2, column=0, columnspan=3, sticky="w", pady=(3, 0))
+        self.compat_check = ttk.Checkbutton(options, text="兼容触屏输入（也可能记录 Codex 的操作，建议先测试）",
                                            variable=self.compatible)
         self.compat_check.grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
         self.inputs.extend([self.awake_check, self.compat_check])
-        pet_options = ttk.Frame(options)
-        pet_options.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(7, 0))
-        ttk.Label(pet_options, text="桌宠模式").pack(side="left", padx=(0, 12))
-        self.pet_widgets = []
-        for label, value in (("静默保护", "silent"), ("鹅鹅巡逻", "patrol")):
-            widget = ttk.Radiobutton(pet_options, text=label, variable=self.pet_mode, value=value,
-                                     command=self.change_pet_mode)
-            widget.pack(side="left", padx=(0, 12))
-            self.pet_widgets.append(widget)
-        ttk.Label(pet_options, text="大鹅沿主屏幕底部往返巡逻，不抢焦点、不拦截点击。",
-                  foreground=MUTED).pack(side="left")
-        self.inputs.extend(self.pet_widgets)
-        self.hint = ttk.Label(body, text="Ctrl + Alt + F9  布防 / 停止     ·     Ctrl + Alt + F10  显示 / 隐藏窗口\n默认过滤系统标记的模拟输入；触屏支持及 Codex 误触发情况，请在本机试用确认。",
-                              foreground=MUTED, wraplength=790)
-        self.hint.grid(row=5, column=0, sticky="w", pady=(0, 12))
-        actions = ttk.Frame(body)
-        actions.grid(row=6, column=0, sticky="ew")
-        self.arm_button = tk.Button(actions, text="开始布防", command=self.arm, bg=BLUE, fg="white",
-                                    activebackground=INK, activeforeground="white", relief="flat", bd=0,
-                                    padx=26, pady=11, font=(FONT, 11, "bold"), cursor="hand2")
-        self.arm_button.pack(side="left")
-        self.stop_button = ttk.Button(actions, text="停止", command=self.stop, state="disabled")
-        self.stop_button.pack(side="left", padx=9)
-        self.test_button = ttk.Button(actions, text="测试拍照", command=self.test_photo)
-        self.test_button.pack(side="left")
-        ttk.Button(actions, text="打开照片目录", command=self.open_folder).pack(side="right")
+        # Mode remains changeable from the tray while armed; match that in the panel.
+        for row, (label, variable, choices) in enumerate((
+                ("鹅鹅大小", self.pet_size, (("小巧", "small"), ("适中", "medium"), ("大鹅", "large"))),
+                ("巡逻速度", self.pet_speed, (("慢悠悠", "slow"), ("日常", "normal"), ("小快步", "brisk"))))):
+            ttk.Label(appearance, text=label, style="Paper.TLabel").grid(row=row, column=0, sticky="w", padx=(0, 22), pady=7)
+            for col, (name, value) in enumerate(choices, 1):
+                ttk.Radiobutton(appearance, text=name, variable=variable, value=value,
+                                command=self.change_pet_mode).grid(row=row, column=col, sticky="w", padx=(0, 25))
+        ttk.Checkbutton(appearance, text="平稳巡逻 · 减少上下起伏和转身晃动", variable=self.pet_gentle,
+                        command=self.change_pet_mode).grid(row=2, column=0, columnspan=4, sticky="w", pady=8)
+        self.preview_button = ttk.Button(appearance, text="预览巡逻 · 6 秒", command=self.preview_pet)
+        self.preview_button.grid(row=3, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        ttk.Label(appearance, text="不启用摄像头；系统关闭动画时静止。", style="Paper.TLabel", foreground=MUTED).grid(
+            row=3, column=2, columnspan=2, sticky="w")
+
         stats = ttk.Frame(body)
-        stats.grid(row=7, column=0, sticky="ew", pady=(16, 6))
+        stats.grid(row=4, column=0, sticky="ew", pady=(8, 6))
         self.stats_label = ttk.Label(stats, text="本次已保存 0 张 · 尚无照片", foreground=TEAL)
         self.stats_label.pack(side="left")
+        ttk.Button(stats, text="照片目录", command=self.open_folder).pack(side="right")
         self.view_button = ttk.Button(stats, text="查看最近照片", command=self.view_latest, state="disabled")
-        self.view_button.pack(side="right")
-        self.log_box = tk.Text(body, height=4, relief="flat", bg="white", fg=INK, font=(FONT, 9),
+        self.view_button.pack(side="right", padx=7)
+        self.log_box = tk.Text(body, height=2, relief="flat", bg=WHITE, fg=MUTED, font=(FONT, 9),
                                padx=12, pady=8, state="disabled", wrap="word")
-        self.log_box.grid(row=8, column=0, sticky="nsew")
-        body.rowconfigure(8, weight=1)
-        ttk.Label(body, text="布防时保持相机会话，触发后请求拍照；无声音、无逐次弹窗。照片保存在所选目录。\n"
-                  "锁屏 / 安全桌面会暂停拍摄。此工具用于记录，不能阻止他人操作或保护未锁定的桌面。",
-                  foreground=MUTED, wraplength=790, font=(FONT, 9)).grid(row=9, column=0, sticky="w", pady=(12, 0))
-        self.log("就绪。程序启动不会自动开启摄像头，也不会自动布防。")
+        self.log_box.grid(row=5, column=0, sticky="nsew")
+        body.rowconfigure(5, weight=1)
+        self.hint = ttk.Label(body, text="Ctrl + Alt + F9  布防 / 停止    ·    Ctrl + Alt + F10  显示 / 隐藏窗口",
+                              foreground=INK, font=(FONT, 9))
+        self.hint.grid(row=6, column=0, sticky="w", pady=(10, 4))
+        ttk.Label(body, text="布防后窗口自动收起至托盘。照片仅存本机，无声音、无拍照弹窗。\n"
+                  "仅用于自己的电脑。锁屏暂停拍摄；不能阻止他人操作。",
+                  foreground=MUTED, wraplength=740, font=(FONT, 9)).grid(row=7, column=0, sticky="w")
+        self.log("就绪。启动不会开启摄像头；默认过滤系统标记的模拟输入。")
+
+    def cancel_pet_preview(self):
+        pending = getattr(self, "pet_preview_after", None)
+        if pending is not None:
+            self.root.after_cancel(pending)
+            self.pet_preview_after = None
+
+    def preview_pet(self):
+        if self.state != "idle":
+            return
+        self.cancel_pet_preview()
+        try:
+            self.pet.configure(size=self.pet_size.get(), speed=self.pet_speed.get(), gentle=self.pet_gentle.get())
+            self.pet.set_visible(True)
+            self.pet_preview_after = self.root.after(6000, self.finish_pet_preview)
+        except (OSError, tk.TclError, RuntimeError) as exc:
+            self.log("桌宠预览未能显示：" + str(exc))
+            self.sync_desktop_pet()
+
+    def finish_pet_preview(self):
+        self.pet_preview_after = None
+        self.sync_desktop_pet()
 
     def log(self, text):
         self.log_box.configure(state="normal")
@@ -226,6 +307,7 @@ class GuardApp:
 
     def sync_desktop_pet(self):
         try:
+            self.pet.configure(size=self.pet_size.get(), speed=self.pet_speed.get(), gentle=self.pet_gentle.get())
             self.pet.set_visible(self.pet_should_patrol())
         except (OSError, tk.TclError, RuntimeError) as exc:
             self.pet_mode.set("silent")
@@ -243,6 +325,7 @@ class GuardApp:
                 self.log("桌宠未能显示，已改用静默模式：" + str(exc))
 
     def change_pet_mode(self):
+        self.cancel_pet_preview()
         if self.pet_mode.get() not in ("silent", "patrol"):
             self.pet_mode.set("silent")
         self.sync_desktop_pet()
@@ -254,9 +337,11 @@ class GuardApp:
     def busy(self, enabled):
         for widget in self.inputs:
             widget.configure(state="disabled" if enabled else "normal")
-        self.arm_button.configure(state="disabled" if enabled else "normal")
+        self.arm_button.configure(state="disabled" if enabled else "normal",
+                                  bg="#38506C" if enabled else ORANGE, disabledforeground="#AABBD0")
         self.test_button.configure(state="disabled" if enabled else "normal")
         self.stop_button.configure(state="normal" if enabled else "disabled")
+        self.preview_button.configure(state="disabled" if enabled else "normal")
 
     def read_config(self):
         values = {}
@@ -324,6 +409,7 @@ class GuardApp:
     def begin(self, test):
         if self.state != "idle":
             return
+        self.cancel_pet_preview()
         try:
             self.config = self.read_config()
             if not is_interactive_desktop():
@@ -557,6 +643,7 @@ class GuardApp:
         # A persistent status replaces disruptive recurring popups.
 
     def close(self):
+        self.cancel_pet_preview()
         self.closing = True
         self.stop()
         if self.controls:

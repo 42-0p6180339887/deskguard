@@ -59,7 +59,7 @@ jobs:
             throw 'Native pet renderer test failed.'
           }
           $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
-          if (-not $result.passed -or -not $result.transparent_corner -or -not $result.body_opaque -or -not $result.turns_at_edges) {
+          if (-not $result.passed -or -not $result.transparent_corner -or -not $result.body_opaque -or -not $result.turns_at_edges -or -not $result.continuous_motion) {
             throw 'Native pet renderer produced invalid alpha.'
           }
       - name: Synthetic camera helper test (no hardware access)

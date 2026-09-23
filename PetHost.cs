@@ -19,10 +19,12 @@ internal static class PetHost {
                 File.WriteAllText(args[1], PatrolForm.SelfTest(args[2], args[3]));
                 return 0;
             }
-            if (args.Length != 2) return 2;
+            if (args.Length != 2 && args.Length != 5) return 2;
             SetProcessDPIAware();
             Application.EnableVisualStyles();
-            using (var pet = new PatrolForm(args[0], args[1])) {
+            using (var pet = new PatrolForm(args[0], args[1],
+                args.Length == 5 ? args[2] : "large", args.Length == 5 ? args[3] : "normal",
+                args.Length == 5 && args[4] == "gentle")) {
                 var watcher = new Thread(() => {
                     try {
                         using (var input = Console.OpenStandardInput()) {
@@ -35,7 +37,7 @@ internal static class PetHost {
                     } catch (InvalidOperationException) { }
                 });
                 watcher.IsBackground = true;
-                watcher.Start();
+                pet.Shown += (sender, e) => watcher.Start();
                 Application.Run(pet);
             }
             return 0;
@@ -54,14 +56,23 @@ internal static class PetHost {
         private const int WM_NCHITTEST = 0x0084;
         private const int WM_MOUSEACTIVATE = 0x0021;
         private const int ULW_ALPHA = 0x00000002;
-        private readonly NativeFrame[,] frames = new NativeFrame[2, 2];
+        private const int PoseCount = 16;
+        private const int TurnCount = 6;
+        private const double TurnDuration = 0.36;
+        private readonly NativeFrame[,] frames = new NativeFrame[2, PoseCount];
+        private readonly NativeFrame[,] turns = new NativeFrame[2, TurnCount];
         private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
         private readonly Stopwatch clock = new Stopwatch();
-        private readonly Rectangle work;
+        private Rectangle work;
         private readonly int side;
-        private double x;
-        private double lastSeconds;
-        private int direction = 1;
+        private readonly double speed;
+        private readonly bool gentle;
+        private readonly bool systemAnimationsOff;
+        private int lastBoundsCheck;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SystemParametersInfoW(uint action, uint param,
+            [MarshalAs(UnmanagedType.Bool)] out bool enabled, uint flags);
 
         [StructLayout(LayoutKind.Sequential)]
         private struct Point { public int X, Y; public Point(int x, int y) { X = x; Y = y; } }
@@ -94,34 +105,52 @@ internal static class PetHost {
         [DllImport("gdi32.dll", SetLastError = true)]
         private static extern bool DeleteDC(IntPtr dc);
 
-        internal PatrolForm(string first, string second) {
+        internal PatrolForm(string first, string second, string size, string pace, bool gentleMotion) {
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
             work = Screen.PrimaryScreen.WorkingArea;
-            side = Math.Min(420, Math.Max(270, (int)(work.Height * 0.42)));
+            int preferred = size == "small" ? 240 : size == "medium" ? 330 : 420;
+            side = Math.Min(preferred, Math.Max(180, (int)(work.Height * 0.42)));
             side = Math.Min(side, Math.Min(work.Width, work.Height));
+            speed = pace == "slow" ? 90 : pace == "brisk" ? 210 : 145;
+            bool animations;
+            systemAnimationsOff = SystemParametersInfoW(0x1042, 0, out animations, 0) && !animations;
+            gentle = gentleMotion || systemAnimationsOff;
             ClientSize = new System.Drawing.Size(side, side);
-            x = work.Left;
             Location = new System.Drawing.Point(work.Left, work.Bottom - side);
             try {
                 using (var one = new Bitmap(first))
-                using (var two = new Bitmap(second)) {
+                using (var two = new Bitmap(second))
+                using (Bitmap preparedOne = Render(one, side, false))
+                using (Bitmap preparedTwo = Render(two, side, false)) {
+                    byte[] a = Pixels(preparedOne), b = Pixels(preparedTwo);
                     for (int dir = 0; dir < 2; dir++) {
-                        using (Bitmap rendered = Render(one, side, dir == 1))
-                            frames[dir, 0] = new NativeFrame(rendered);
-                        using (Bitmap rendered = Render(two, side, dir == 1))
-                            frames[dir, 1] = new NativeFrame(rendered);
+                        for (int i = 0; i < PoseCount; i++) {
+                            double phase = i * 2 * Math.PI / PoseCount;
+                            using (Bitmap blended = Blend(a, b, side, (1 - Math.Cos(phase)) / 2))
+                            using (Bitmap rendered = Pose(blended, dir == 1,
+                                gentle ? 0 : Math.Sin(phase) * 1.1, 1))
+                                frames[dir, i] = new NativeFrame(rendered);
+                        }
+                        for (int i = 0; i < TurnCount; i++)
+                            using (Bitmap rendered = Pose(preparedOne, dir == 1, 0,
+                                gentle ? 1 : 1 - 0.8 * i / (TurnCount - 1)))
+                                turns[dir, i] = new NativeFrame(rendered);
                     }
                 }
             } catch {
                 foreach (NativeFrame frame in frames) if (frame != null) frame.Dispose();
+                foreach (NativeFrame frame in turns) if (frame != null) frame.Dispose();
                 throw;
             }
-            timer.Interval = 33;
+            timer.Interval = systemAnimationsOff ? 1000 : 15;
             timer.Tick += (sender, e) => TickPatrol();
-            Shown += (sender, e) => { clock.Start(); PaintFrame(0); timer.Start(); };
+            Shown += (sender, e) => {
+                clock.Start(); TickPatrol();
+                timer.Start();
+            };
         }
 
         protected override CreateParams CreateParams {
@@ -153,25 +182,98 @@ internal static class PetHost {
             return output;
         }
 
+        private static byte[] Pixels(Bitmap bitmap) {
+            BitmapData data = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height),
+                ImageLockMode.ReadOnly, PixelFormat.Format32bppPArgb);
+            try {
+                byte[] pixels = new byte[bitmap.Width * bitmap.Height * 4];
+                for (int y = 0; y < bitmap.Height; y++)
+                    Marshal.Copy(IntPtr.Add(data.Scan0, y * data.Stride), pixels,
+                        y * bitmap.Width * 4, bitmap.Width * 4);
+                return pixels;
+            } finally { bitmap.UnlockBits(data); }
+        }
+
+        private static Bitmap Blend(byte[] first, byte[] second, int side, double amount) {
+            var bitmap = new Bitmap(side, side, PixelFormat.Format32bppPArgb);
+            byte[] mixed = new byte[first.Length];
+            // Interpolate premultiplied colors AND alpha, so a pose transition
+            // never creates a dark edge or a translucent body.
+            for (int i = 0; i < mixed.Length; i++)
+                mixed[i] = (byte)Math.Round(first[i] * (1 - amount) + second[i] * amount);
+            BitmapData data = bitmap.LockBits(new Rectangle(0, 0, side, side),
+                ImageLockMode.WriteOnly, PixelFormat.Format32bppPArgb);
+            try {
+                for (int y = 0; y < side; y++)
+                    Marshal.Copy(mixed, y * side * 4, IntPtr.Add(data.Scan0, y * data.Stride), side * 4);
+            } finally { bitmap.UnlockBits(data); }
+            return bitmap;
+        }
+
+        private static Bitmap Pose(Bitmap source, bool flip, double tilt, double widthScale) {
+            int side = source.Width;
+            var output = new Bitmap(side, side, PixelFormat.Format32bppPArgb);
+            using (Graphics g = Graphics.FromImage(output)) {
+                g.Clear(Color.Transparent);
+                g.CompositingMode = CompositingMode.SourceCopy;
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.TranslateTransform(side / 2f, side * 0.92f);
+                g.ScaleTransform((float)(widthScale * (flip ? -1 : 1)), 1);
+                g.RotateTransform((float)tilt);
+                g.TranslateTransform(-side / 2f, -side * 0.92f);
+                g.DrawImage(source, new Rectangle(0, 0, side, side));
+            }
+            return output;
+        }
+
+        private struct Motion {
+            internal double X, Phase;
+            internal int Heading, TurnLevel;
+            internal bool Turning;
+        }
+
+        private static Motion Sample(double seconds, int left, int right, double speed, int side) {
+            double distance = Math.Max(0, right - left);
+            if (distance == 0) return new Motion { X = left, Heading = 1 };
+            double duration = Math.Max(0.6, distance / speed);
+            double segment = duration + TurnDuration;
+            long leg = (long)Math.Floor(seconds / segment);
+            double local = seconds - leg * segment;
+            int heading = leg % 2 == 0 ? 1 : -1;
+            double t = Math.Min(1, local / duration);
+            double progress = (1 - Math.Cos(Math.PI * t)) / 2;
+            var result = new Motion {
+                X = heading == 1 ? left + distance * progress : right - distance * progress,
+                Heading = heading,
+                Phase = progress * Math.Max(1, Math.Round(distance / (side * 0.22))) * 2 * Math.PI,
+                Turning = local >= duration,
+            };
+            if (result.Turning) {
+                double turn = (local - duration) / TurnDuration;
+                result.Heading = turn < 0.5 ? heading : -heading;
+                result.TurnLevel = (int)Math.Round((1 - Math.Abs(Math.Cos(Math.PI * turn))) * (TurnCount - 1));
+            }
+            return result;
+        }
+
         private void TickPatrol() {
             double seconds = clock.Elapsed.TotalSeconds;
-            double delta = Math.Min(0.1, seconds - lastSeconds);
-            lastSeconds = seconds;
-            int left = work.Left, right = Math.Max(left, work.Right - side);
-            Advance(ref x, ref direction, delta, left, right);
-            int step = ((int)(seconds / 0.22)) % 2;
-            PaintFrame(step, step == 0 ? 0 : 6);
+            if ((int)seconds != lastBoundsCheck) {
+                lastBoundsCheck = (int)seconds;
+                Rectangle current = Screen.PrimaryScreen.WorkingArea;
+                if (current != work) { work = current; clock.Restart(); seconds = 0; lastBoundsCheck = 0; }
+            }
+            Motion motion = Sample(systemAnimationsOff ? 0 : seconds, work.Left,
+                Math.Max(work.Left, work.Right - side), speed, side);
+            int pose = ((int)Math.Round(motion.Phase / (2 * Math.PI) * PoseCount)) % PoseCount;
+            int dir = motion.Heading == 1 ? 0 : 1;
+            NativeFrame frame = motion.Turning ? turns[dir, motion.TurnLevel] : frames[dir, pose];
+            int bob = gentle || motion.Turning ? 0 : (int)Math.Round(3 * (1 - Math.Cos(2 * motion.Phase)));
+            PaintFrame(frame, motion.X, bob);
         }
 
-        private static void Advance(ref double position, ref int heading, double seconds, int left, int right) {
-            if (right <= left) { position = left; return; }
-            position += heading * 145.0 * seconds;
-            if (position >= right) { position = right - (position - right); heading = -1; }
-            if (position <= left) { position = left + (left - position); heading = 1; }
-        }
-
-        private void PaintFrame(int step, int bob = 0) {
-            NativeFrame frame = frames[direction > 0 ? 0 : 1, step];
+        private void PaintFrame(NativeFrame frame, double x, int bob) {
             var point = new Point((int)Math.Round(x), work.Bottom - side - bob);
             var size = new PixelSize(side, side);
             var origin = new Point(0, 0);
@@ -182,13 +284,20 @@ internal static class PetHost {
         }
 
         internal static string SelfTest(string first, string second) {
-            double position = 498;
-            int heading = 1;
-            Advance(ref position, ref heading, 0.05, 0, 500);
-            if (heading != -1 || position >= 500) throw new InvalidDataException("Right turn failed.");
-            position = 2;
-            Advance(ref position, ref heading, 0.05, 0, 500);
-            if (heading != 1 || position <= 0) throw new InvalidDataException("Left turn failed.");
+            double duration = 500.0 / 145;
+            Motion rightTurn = Sample(duration + TurnDuration * 0.75, 0, 500, 145, 360);
+            Motion leftTurn = Sample(2 * duration + TurnDuration * 1.75, 0, 500, 145, 360);
+            if (rightTurn.Heading != -1 || rightTurn.X != 500 || !rightTurn.Turning)
+                throw new InvalidDataException("Right turn failed.");
+            if (leftTurn.Heading != 1 || leftTurn.X != 0 || !leftTurn.Turning)
+                throw new InvalidDataException("Left turn failed.");
+            Motion previous = Sample(0, 0, 500, 145, 360);
+            for (int i = 1; i <= 2000; i++) {
+                Motion current = Sample(i * 0.01, 0, 500, 145, 360);
+                if (current.X < 0 || current.X > 500 || Math.Abs(current.X - previous.X) > 2.3)
+                    throw new InvalidDataException("Motion is not continuous or escaped the desktop.");
+                previous = current;
+            }
             using (var one = new Bitmap(first))
             using (var two = new Bitmap(second))
             using (Bitmap right = Render(one, 360, false))
@@ -196,7 +305,11 @@ internal static class PetHost {
                 if (right.GetPixel(0, 0).A != 0 || left.GetPixel(0, 0).A != 0 ||
                     right.GetPixel(180, 240).A < 200 || left.GetPixel(180, 240).A < 200)
                     throw new InvalidDataException("Pet alpha or dimensions are invalid.");
-                return "{\"passed\":true,\"transparent_corner\":true,\"body_opaque\":true,\"turns_at_edges\":true}";
+                using (Bitmap mixed = Blend(Pixels(right), Pixels(left), 360, 0.5)) {
+                    if (mixed.GetPixel(180, 240).A < 200)
+                        throw new InvalidDataException("Pose blending lost body alpha.");
+                }
+                return "{\"passed\":true,\"transparent_corner\":true,\"body_opaque\":true,\"turns_at_edges\":true,\"continuous_motion\":true}";
             }
         }
 
@@ -204,6 +317,7 @@ internal static class PetHost {
             if (disposing) {
                 timer.Stop(); timer.Dispose();
                 foreach (NativeFrame frame in frames) if (frame != null) frame.Dispose();
+                foreach (NativeFrame frame in turns) if (frame != null) frame.Dispose();
             }
             base.Dispose(disposing);
         }
