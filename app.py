@@ -171,7 +171,7 @@ class GuardApp:
                                      command=self.change_pet_mode)
             widget.pack(side="left", padx=(0, 12))
             self.pet_widgets.append(widget)
-        ttk.Label(pet_options, text="巡逻只沿屏幕边缘移动，不抢焦点、不拦截点击。",
+        ttk.Label(pet_options, text="大鹅沿主屏幕底部往返巡逻，不抢焦点、不拦截点击。",
                   foreground=MUTED).pack(side="left")
         self.inputs.extend(self.pet_widgets)
         self.hint = ttk.Label(body, text="Ctrl + Alt + F9  布防 / 停止     ·     Ctrl + Alt + F10  显示 / 隐藏窗口\n默认过滤系统标记的模拟输入；触屏支持及 Codex 误触发情况，请在本机试用确认。",

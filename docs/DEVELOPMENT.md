@@ -47,10 +47,12 @@ assets/
     deskguard.ico
     deskguard.png
     deskguard-pet.png
+    deskguard-pet-step.png
 _app/
     app.py
     desktop_pet.py
     CameraHost.exe
+    PetHost.exe
     ...
 _runtime/
     pythonw.exe
@@ -64,11 +66,11 @@ _runtime/
 
 ## 图标与版本
 
-`assets/deskguard.png` 是保安鹅应用图标，`assets/deskguard.ico` 是 Windows 图标文件，`assets/deskguard-pet.png` 是透明桌宠素材。应用图标保持静态；布防状态通过托盘文字提示和主窗口表达，图案中的红点不是拍照状态指示。图像由内置图像工具生成，许可说明见仓库首页。
+`assets/deskguard.png` 是保安鹅应用图标，`assets/deskguard.ico` 是 Windows 图标文件，两张 `assets/deskguard-pet*.png` 是透明桌宠步伐素材。应用图标保持静态；布防状态通过托盘文字提示和主窗口表达，图案中的红点不是拍照状态指示。图像由内置图像工具生成，许可说明见仓库首页。
 
-构建脚本将应用图标、桌宠图像、`desktop_pet.py` 和 `CHANGELOG.md` 纳入发布文件白名单，并通过编译器的 `/win32icon` 参数将 ICO 嵌入 `DeskGuard.exe`。桌宠通过可选的点击穿透顶层窗口和 Tk 事件循环动画实现。添加其他资源时，应同时更新白名单及相关打包测试，避免将运行后产生的照片或配置混入发布包。
+构建脚本将应用图标、两张桌宠图像、`desktop_pet.py`、`PetHost.exe` 和 `CHANGELOG.md` 纳入发布文件白名单，并通过编译器的 `/win32icon` 参数将 ICO 嵌入 `DeskGuard.exe`。桌宠由独立的点击穿透原生窗口绘制，采用逐像素透明、高质量缩放和定时动画；停止巡逻时关闭子进程。添加其他资源时，应同时更新白名单及相关打包测试，避免将运行后产生的照片或配置混入发布包。
 
-`VERSION` 是版本号来源，采用三个数字分段，例如 `0.1.2`。构建脚本据此生成启动程序和摄像头辅助程序的版本元数据：文件版本为 `0.1.2.0`，产品版本为 `0.1.2`。发布新版本时同步维护 `CHANGELOG.md`，并使用对应的 `v0.1.2` 格式标签。
+`VERSION` 是版本号来源，采用三个数字分段，例如 `0.1.3`。构建脚本据此生成启动程序、摄像头辅助程序和桌宠程序的版本元数据：文件版本为 `0.1.3.0`，产品版本为 `0.1.3`。发布新版本时同步维护 `CHANGELOG.md`，并使用对应的 `v0.1.3` 格式标签。
 
 ## 代码分工
 
@@ -80,6 +82,7 @@ _runtime/
 | `guard_core.py` | 触发合并、拍照间隔、容量检查、照片与元数据保存 |
 | `camera_worker.py` | 与摄像头辅助进程通信，使用 Windows Job Object 清理子进程 |
 | `CameraHost.cs` | Windows MediaCapture；收到 `OPEN` 才初始化，`SNAP` 拍照，`STOP` 释放 |
+| `PetHost.cs` | 大鹅巡逻窗口、逐像素透明绘制及往返动画 |
 | `Launcher.cs` | 便携版启动入口 |
 
 输入模块不读取键值或保存鼠标坐标。低级输入回调只检查标记、更新计数并传递事件；摄像头和文件操作在回调之外执行。检测到锁屏或安全桌面后尽快暂停摄像头，恢复后重新建立触发基线；轮询和进行中的拍照可能带来短暂延迟，这不是严格的安全边界。任何改变这些行为的修改都应同步更新使用说明和相关测试。

@@ -48,7 +48,8 @@ class ReleaseBuildTests(unittest.TestCase):
     def compile_stub(source, package):
         (package / "DeskGuard.exe").write_bytes(b"compiled launcher")
         (package / "_app" / "CameraHost.exe").write_bytes(b"compiled camera helper")
-        return [Path("DeskGuard.exe"), Path("_app/CameraHost.exe")]
+        (package / "_app" / "PetHost.exe").write_bytes(b"compiled desktop pet")
+        return [Path("DeskGuard.exe"), Path("_app/CameraHost.exe"), Path("_app/PetHost.exe")]
 
     def build(self):
         with patch.object(builder, "_validate_host"), patch.object(builder, "_compile_native", side_effect=self.compile_stub):
@@ -78,6 +79,7 @@ class ReleaseBuildTests(unittest.TestCase):
             self.assertIn("DeskGuard/_runtime/LICENSE.txt", names)
             self.assertIn("DeskGuard/_runtime/tcl/tcl8.6/license.terms", names)
             self.assertEqual(archive.read("DeskGuard/_app/CameraHost.exe"), b"compiled camera helper")
+            self.assertEqual(archive.read("DeskGuard/_app/PetHost.exe"), b"compiled desktop pet")
             self.assertFalse(any("private" in name or "site-packages" in name or "__pycache__" in name or "settings.json" in name for name in names))
         checksum = hashlib.sha256(result["archive"].read_bytes()).hexdigest()
         self.assertEqual(result["checksums"].read_text(), checksum + "  DeskGuard-Windows.zip\n")

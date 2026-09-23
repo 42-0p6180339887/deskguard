@@ -32,7 +32,8 @@ DOCUMENTS = (
     "docs/USER_GUIDE.zh-CN.md", "docs/VALIDATION.zh-CN.md",
     "docs/DEVELOPMENT.md", "VERSION",
 )
-ASSETS = ("assets/deskguard.ico", "assets/deskguard.png", "assets/deskguard-pet.png")
+ASSETS = ("assets/deskguard.ico", "assets/deskguard.png", "assets/deskguard-pet.png",
+          "assets/deskguard-pet-step.png")
 _EXCLUDED_DIRS = {
     "site-packages", "__pycache__", "test", "tests", "idlelib", "ensurepip",
     "venv", "turtledemo", "photos", "logs", ".git",
@@ -127,7 +128,7 @@ def _compile_native(source_dir: Path, package_dir: Path) -> list[Path]:
     metadata = windows / "System32" / "WinMetadata"
     compiler = framework / "csc.exe"
     _regular_file(compiler)
-    for name in ("CameraHost.cs", "Launcher.cs"):
+    for name in ("CameraHost.cs", "Launcher.cs", "PetHost.cs"):
         _regular_file(source_dir / name)
     icon = source_dir / "assets" / "deskguard.ico"
     _regular_file(icon)
@@ -155,6 +156,10 @@ def _compile_native(source_dir: Path, package_dir: Path) -> list[Path]:
          "/r:System.Windows.Forms.dll", "/out:" + str(package_dir / "DeskGuard.exe"),
          "/win32icon:" + str(icon),
          str(source_dir / "Launcher.cs")],
+        [str(compiler), "/nologo", "/target:winexe", "/platform:x64", "/optimize+",
+         "/r:System.Drawing.dll", "/r:System.Windows.Forms.dll",
+         "/out:" + str(package_dir / "_app" / "PetHost.exe"),
+         str(source_dir / "PetHost.cs")],
     ]
     # Derive executable metadata from the same VERSION shipped in the package.
     # Keep generated source outside the payload and remove it after compilation.
@@ -172,7 +177,7 @@ def _compile_native(source_dir: Path, package_dir: Path) -> list[Path]:
                 subprocess.run(command + [str(assembly_info)], check=True, capture_output=True, text=True, errors="replace")
             except subprocess.CalledProcessError as exc:
                 raise BuildError("Native compilation failed:\n" + exc.stdout + exc.stderr) from exc
-    return [camera_path, Path("DeskGuard.exe")]
+    return [camera_path, Path("DeskGuard.exe"), Path("_app") / "PetHost.exe"]
 
 
 def _payload_path_allowed(relative: Path) -> bool:
@@ -181,7 +186,7 @@ def _payload_path_allowed(relative: Path) -> bool:
     if relative.as_posix() in (*DOCUMENTS, *ASSETS) or relative == Path("DeskGuard.exe"):
         return True
     if relative.parts[0] == "_app":
-        return len(relative.parts) == 2 and relative.name in (*APP_MODULES, "CameraHost.exe")
+        return len(relative.parts) == 2 and relative.name in (*APP_MODULES, "CameraHost.exe", "PetHost.exe")
     if relative.parts[0] == "_runtime":
         if len(relative.parts) < 2:
             return False

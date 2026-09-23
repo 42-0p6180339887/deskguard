@@ -28,22 +28,40 @@ jobs:
         shell: pwsh
         run: |
           $version = (Get-Content -LiteralPath VERSION -Raw).Trim()
-          foreach ($path in @('dist/DeskGuard/DeskGuard.exe', 'dist/DeskGuard/_app/CameraHost.exe')) {
+          foreach ($path in @('dist/DeskGuard/DeskGuard.exe', 'dist/DeskGuard/_app/CameraHost.exe', 'dist/DeskGuard/_app/PetHost.exe')) {
             $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path -LiteralPath $path).Path)
             if ($info.FileVersion -ne "$version.0" -or $info.ProductVersion -ne $version) {
               throw "Version metadata mismatch: $path"
             }
           }
-          foreach ($name in @('deskguard.ico', 'deskguard.png', 'deskguard-pet.png')) {
+          foreach ($name in @('deskguard.ico', 'deskguard.png', 'deskguard-pet.png', 'deskguard-pet-step.png')) {
             $source = (Get-FileHash -LiteralPath "assets/$name" -Algorithm SHA256).Hash
             $packaged = (Get-FileHash -LiteralPath "dist/DeskGuard/assets/$name" -Algorithm SHA256).Hash
             if ($source -ne $packaged) { throw "Packaged icon mismatch: $name" }
           }
           Add-Type -AssemblyName System.Drawing
-          $pet = [System.Drawing.Bitmap]::new((Resolve-Path -LiteralPath 'dist/DeskGuard/assets/deskguard-pet.png').Path)
-          try {
-            if ($pet.GetPixel(0, 0).A -ne 0) { throw 'Pet artwork must retain transparent corners.' }
-          } finally { $pet.Dispose() }
+          foreach ($name in @('deskguard-pet.png', 'deskguard-pet-step.png')) {
+            $pet = [System.Drawing.Bitmap]::new((Resolve-Path -LiteralPath "dist/DeskGuard/assets/$name").Path)
+            try {
+              if ($pet.GetPixel(0, 0).A -ne 0) { throw "Pet artwork must retain transparent corners: $name" }
+            } finally { $pet.Dispose() }
+          }
+      - name: Native pet asset and renderer test (no window)
+        shell: pwsh
+        run: |
+          $report = Join-Path $env:RUNNER_TEMP 'deskguard-pet-self-test.json'
+          $exe = (Resolve-Path -LiteralPath 'dist/DeskGuard/_app/PetHost.exe').Path
+          $first = (Resolve-Path -LiteralPath 'dist/DeskGuard/assets/deskguard-pet.png').Path
+          $second = (Resolve-Path -LiteralPath 'dist/DeskGuard/assets/deskguard-pet-step.png').Path
+          $process = Start-Process -FilePath $exe -ArgumentList @('--self-test', ('"' + $report + '"'), ('"' + $first + '"'), ('"' + $second + '"')) -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            if (Test-Path -LiteralPath $report) { Get-Content -LiteralPath $report }
+            throw 'Native pet renderer test failed.'
+          }
+          $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+          if (-not $result.passed -or -not $result.transparent_corner -or -not $result.body_opaque -or -not $result.turns_at_edges) {
+            throw 'Native pet renderer produced invalid alpha.'
+          }
       - name: Synthetic camera helper test (no hardware access)
         shell: pwsh
         run: |
