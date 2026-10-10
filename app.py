@@ -61,7 +61,7 @@ class GuardApp:
         root.configure(bg=BG)
         root.geometry("820x760")
         root.minsize(760, 700)
-        root.protocol("WM_DELETE_WINDOW", self.close)
+        root.protocol("WM_DELETE_WINDOW", self.hide_window)
         self.folder = tk.StringVar(value=str(APP_DIR / "Photos"))
         self.camera = tk.StringVar(value="0")
         self.interval = tk.StringVar(value="3")
@@ -258,7 +258,7 @@ class GuardApp:
                               foreground=INK, font=(FONT, 9))
         self.hint.grid(row=6, column=0, sticky="w", pady=(10, 4))
         ttk.Label(body, text="布防后窗口自动收起至托盘。照片仅存本机，无声音、无拍照弹窗。\n"
-                  "仅用于自己的电脑。锁屏暂停拍摄；不能阻止他人操作。",
+                  "× 隐藏窗口，托盘菜单退出。仅用于自己的电脑；锁屏暂停拍摄。",
                   foreground=MUTED, wraplength=740, font=(FONT, 9)).grid(row=7, column=0, sticky="w")
         self.log("就绪。启动不会开启摄像头；默认过滤系统标记的模拟输入。")
 
@@ -391,7 +391,12 @@ class GuardApp:
     def toggle_window(self):
         if self.root.state() in ("withdrawn", "iconic"):
             self.show_window()
-        elif self.controls:
+        else:
+            self.hide_window()
+
+    def hide_window(self):
+        """Keep protection and the pet running; leave a recovery route."""
+        if self.controls:
             self.root.withdraw()
         else:
             self.root.iconify()

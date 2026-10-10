@@ -37,6 +37,50 @@ def fake_app():
     return guard
 
 
+class WindowLifecycleTests(unittest.TestCase):
+    def test_hide_preserves_protection_and_pet_in_every_state(self):
+        for state in ("idle", "opening", "countdown", "armed", "testing", "paused"):
+            with self.subTest(state=state):
+                guard = fake_app()
+                guard.state = state
+                guard.controls = Mock()
+                guard.pet = Mock()
+                guard.stop = Mock()
+                guard.hide_window()
+                guard.root.withdraw.assert_called_once_with()
+                guard.root.destroy.assert_not_called()
+                guard.stop.assert_not_called()
+                guard.controls.stop.assert_not_called()
+                guard.pet.close.assert_not_called()
+                self.assertEqual(guard.state, state)
+
+    def test_hide_without_tray_keeps_taskbar_recovery(self):
+        guard = fake_app()
+        guard.hide_window()
+        guard.root.iconify.assert_called_once_with()
+        guard.root.withdraw.assert_not_called()
+
+    def test_hotkey_restores_hidden_or_minimized_window(self):
+        for state in ("withdrawn", "iconic"):
+            guard = fake_app()
+            guard.root.state.return_value = state
+            guard.toggle_window()
+            guard.root.deiconify.assert_called_once_with()
+            guard.root.lift.assert_called_once_with()
+
+    def test_explicit_exit_still_releases_every_component(self):
+        guard = fake_app()
+        guard.controls = controls = Mock()
+        guard.pet = Mock()
+        guard.stop = Mock()
+        guard.close()
+        guard.stop.assert_called_once_with()
+        controls.stop.assert_called_once_with()
+        guard.pet.close.assert_called_once_with()
+        guard.root.destroy.assert_called_once_with()
+        self.assertTrue(guard.closing)
+
+
 class AppCleanupTests(unittest.TestCase):
     def test_process_start_failure_releases_input_and_power_requests(self):
         guard = fake_app()
