@@ -1,6 +1,8 @@
 # Personal recordings and configuration must never be committed.
 **/Photos/
 settings.json
+access.json
+.deskguard-access-*.tmp
 events.jsonl
 startup-error.txt
 *.jpg

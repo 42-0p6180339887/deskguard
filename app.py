@@ -11,8 +11,9 @@ import subprocess
 import tempfile
 import time
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
+from access_control import AccessControl, AccessError
 from camera_worker import run_camera, decode_photo, HOST_PATH
 from desktop_pet import DesktopPet
 from guard_core import TriggerGate, check_storage, save_jpeg, validate_output_dir
@@ -39,6 +40,8 @@ class GuardApp:
     def __init__(self, root, settings_file=None, poll=True):
         self.root = root
         self.settings_file = settings_file or APP_DIR / "settings.json"
+        self.access = AccessControl(self.settings_file.with_name("access.json"))
+        self.auth_dialog_active = False
         self.state = "idle"
         self.process = None
         self.monitor = None
@@ -176,7 +179,7 @@ class GuardApp:
                                     activebackground="#FFC277", activeforeground=INK, relief="flat", bd=0,
                                     padx=22, pady=7, font=(FONT, 11, "bold"), cursor="hand2")
         self.arm_button.pack(side="left")
-        self.stop_button = ttk.Button(actions, text="停止守护", command=self.stop, state="disabled", style="Stop.TButton")
+        self.stop_button = ttk.Button(actions, text="停止守护", command=self.request_stop, state="disabled", style="Stop.TButton")
         self.stop_button.pack(side="left", padx=9)
         self.test_button = ttk.Button(actions, text="测试拍照", command=self.test_photo)
         self.test_button.pack(side="right")
@@ -202,6 +205,16 @@ class GuardApp:
         appearance = ttk.Frame(notebook, style="Paper.TFrame", padding=(14, 12))
         notebook.add(options, text="守护设置")
         notebook.add(appearance, text="巡逻外观")
+        security = ttk.Frame(notebook, style="Paper.TFrame", padding=(14, 12))
+        notebook.add(security, text="访问密码")
+        self.password_status = ttk.Label(security, text=self.password_status_text(), style="Paper.TLabel")
+        self.password_status.pack(anchor="w", pady=(0, 10))
+        self.password_button = ttk.Button(security, text="设置 / 修改密码", command=self.configure_password)
+        self.password_button.pack(anchor="w")
+        ttk.Label(security, text="停止守护、退出、查看照片时验证。首次布防前必须设置。\n"
+                  "忘记密码无法找回，请妥善保存。密码窗口打开期间守护继续。\n"
+                  "此密码保护软件入口，照片文件未加密，资源管理器仍可直接访问。",
+                  style="Paper.TLabel", foreground=MUTED, wraplength=700).pack(anchor="w", pady=(12, 0))
         options.columnconfigure(1, weight=1)
         ttk.Label(options, text="照片位置", style="Paper.TLabel").grid(row=0, column=0, sticky="w", padx=(0, 12))
         self.folder_entry = ttk.Entry(options, textvariable=self.folder)
@@ -267,6 +280,91 @@ class GuardApp:
         if pending is not None:
             self.root.after_cancel(pending)
             self.pet_preview_after = None
+
+    def password_status_text(self):
+        if self.access.error:
+            return "密码文件异常 · 受保护操作已锁定"
+        return "访问密码已设置" if self.access.configured else "尚未设置 · 请在离开电脑前设置访问密码"
+
+    def ensure_password(self):
+        if self.access.error:
+            messagebox.showerror("访问密码", self.access.error, parent=self.root)
+            return False
+        return self.access.configured or self.configure_password()
+
+    def configure_password(self):
+        if self.auth_dialog_active:
+            return False
+        if self.state != "idle":
+            messagebox.showinfo("访问密码", "请先验证密码并停止守护，再修改密码。", parent=self.root)
+            return False
+        if self.access.error:
+            messagebox.showerror("访问密码", self.access.error, parent=self.root)
+            return False
+        if self.access.configured and not self.authorize("修改访问密码"):
+            return False
+        self.auth_dialog_active = True
+        try:
+            self.show_window()
+            password = simpledialog.askstring("设置访问密码", "输入新密码（8–128 个字符）：", show="*", parent=self.root)
+            if password is None:
+                return False
+            confirmation = simpledialog.askstring("确认访问密码", "再次输入新密码：", show="*", parent=self.root)
+            if confirmation is None:
+                return False
+            if password != confirmation:
+                messagebox.showerror("访问密码", "两次密码不一致，未作修改。", parent=self.root)
+                return False
+            self.access.set_password(password)
+            self.password_status.configure(text=self.password_status_text())
+            self.log("访问密码已保存。停止、退出与查看照片时需要验证。")
+            return True
+        except (AccessError, OSError) as exc:
+            messagebox.showerror("密码未保存", str(exc), parent=self.root)
+            return False
+        finally:
+            self.auth_dialog_active = False
+
+    def authorize(self, action):
+        if self.auth_dialog_active:
+            return False
+        if not self.access.configured and not self.access.error:
+            # Missing credentials must never allow replacement during protection.
+            return self.state == "idle" and self.ensure_password()
+        self.auth_dialog_active = True
+        try:
+            self.show_window()
+            if self.access.error:
+                raise AccessError(self.access.error)
+            remaining = self.access.wait_seconds()
+            if remaining:
+                raise AccessError(f"尝试过多，请 {remaining} 秒后再试。")
+            password = simpledialog.askstring(action, "请输入访问密码；取消将保持当前状态：", show="*", parent=self.root)
+            if password is None:
+                return False
+            if self.access.verify(password):
+                return True
+            messagebox.showerror("验证未通过", "密码不正确，操作未执行。连续 5 次错误后需等待 30 秒。", parent=self.root)
+            return False
+        except AccessError as exc:
+            messagebox.showerror("验证未通过", str(exc), parent=self.root)
+            return False
+        finally:
+            self.auth_dialog_active = False
+
+    def request_stop(self):
+        if self.state != "idle" and self.authorize("停止守护"):
+            self.stop()
+
+    def request_close(self):
+        if self.auth_dialog_active:
+            return
+        # A new installation can be closed before setup; protection cannot start
+        # without a persisted password. Existing credentials protect idle exits too.
+        if not self.access.configured and not self.access.error and self.state == "idle":
+            self.close()
+        elif self.authorize("退出离席守护"):
+            self.close()
 
     def preview_pet(self):
         if self.state != "idle":
@@ -364,11 +462,15 @@ class GuardApp:
         return values
 
     def browse(self):
+        if not self.authorize("选择照片目录"):
+            return
         folder = filedialog.askdirectory(title="选择照片保存目录", parent=self.root)
         if folder:
             self.folder.set(folder)
 
     def open_folder(self):
+        if not self.authorize("查看照片目录"):
+            return
         try:
             folder = validate_output_dir(Path(self.folder.get()).expanduser())
             os.startfile(str(folder))
@@ -376,19 +478,23 @@ class GuardApp:
             messagebox.showerror("无法打开目录", str(exc), parent=self.root)
 
     def view_latest(self):
-        if self.latest:
+        if self.latest and self.authorize("查看最近照片"):
             try:
                 os.startfile(str(self.latest))
             except OSError as exc:
                 messagebox.showerror("无法打开照片", str(exc), parent=self.root)
 
     def toggle(self):
+        if self.auth_dialog_active:
+            return
         if self.state == "idle":
             self.arm()
         else:
-            self.stop()
+            self.request_stop()
 
     def toggle_window(self):
+        if self.auth_dialog_active:
+            return
         if self.root.state() in ("withdrawn", "iconic"):
             self.show_window()
         else:
@@ -396,6 +502,8 @@ class GuardApp:
 
     def hide_window(self):
         """Keep protection and the pet running; leave a recovery route."""
+        if self.auth_dialog_active:
+            return
         if self.controls:
             self.root.withdraw()
         else:
@@ -412,7 +520,9 @@ class GuardApp:
         self.begin(test=True)
 
     def begin(self, test):
-        if self.state != "idle":
+        if self.state != "idle" or self.auth_dialog_active:
+            return
+        if not self.ensure_password():
             return
         self.cancel_pet_preview()
         try:
@@ -489,7 +599,12 @@ class GuardApp:
                 except Empty:
                     break
                 if action == "toggle":
-                    self.toggle()
+                    # Modal dialogs must start after tick schedules its next run,
+                    # otherwise waiting for a password would suspend monitoring.
+                    if not self.auth_dialog_active:
+                        # Capture intent now: an automatic stop later in this
+                        # tick must not turn a requested stop into a fresh arm.
+                        self.root.after_idle(self.arm if self.state == "idle" else self.request_stop)
                 elif action == "show":
                     self.show_window()
                 elif action == "toggle_window":
@@ -498,8 +613,8 @@ class GuardApp:
                     self.pet_mode.set("silent" if self.pet_mode.get() == "patrol" else "patrol")
                     self.change_pet_mode()
                 elif action == "quit":
-                    self.close()
-                    return
+                    if not self.auth_dialog_active:
+                        self.root.after_idle(self.request_close)
             if self.state in ("opening", "countdown", "armed", "testing"):
                 if not is_interactive_desktop():
                     cleanup_errors = self.stop_camera()
@@ -535,7 +650,7 @@ class GuardApp:
                     self.state = "armed"
                     self.set_status("已布防 · 摄像头已启用", "检测到输入活动时保存照片；最短间隔 " + str(self.config["interval"]) + " 秒。")
                     self.log("已布防。" + ("兼容模式会包含模拟输入。" if self.config["compatible"] else "已过滤系统标记的模拟输入。"))
-                    if self.controls:
+                    if self.controls and not self.auth_dialog_active:
                         self.root.withdraw()
             elif self.state == "armed":
                 sequence = self.input_sequence()

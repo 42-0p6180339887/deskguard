@@ -20,7 +20,7 @@ import zipfile
 
 
 APP_MODULES = (
-    "app.py", "guard_core.py", "windows_input.py", "windows_tray.py", "camera_worker.py", "desktop_pet.py",
+    "app.py", "guard_core.py", "windows_input.py", "windows_tray.py", "camera_worker.py", "desktop_pet.py", "access_control.py",
 )
 RUNTIME_FILES = (
     "python.exe", "pythonw.exe", "python3.dll", "python312.dll",
@@ -38,7 +38,7 @@ _EXCLUDED_DIRS = {
     "site-packages", "__pycache__", "test", "tests", "idlelib", "ensurepip",
     "venv", "turtledemo", "photos", "logs", ".git",
 }
-_EXCLUDED_FILES = {"settings.json", "events.jsonl"}
+_EXCLUDED_FILES = {"settings.json", "events.jsonl", "access.json"}
 _EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".jpg", ".jpeg"}
 
 

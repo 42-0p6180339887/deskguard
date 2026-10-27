@@ -15,6 +15,8 @@ def fake_app():
     guard = app.GuardApp.__new__(app.GuardApp)
     guard.root = Mock()
     guard.state = "idle"
+    guard.auth_dialog_active = False
+    guard.ensure_password = Mock(return_value=True)
     guard.process = None
     guard.monitor = None
     guard.controls = None

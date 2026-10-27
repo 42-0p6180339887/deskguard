@@ -60,9 +60,10 @@ class ReleaseBuildTests(unittest.TestCase):
         (self.source / "Photos").mkdir()
         (self.source / "Photos" / "private.jpg").write_bytes(b"private")
         (self.source / "settings.json").write_text("private settings", encoding="utf-8")
+        (self.source / "access.json").write_text("private password verifier", encoding="utf-8")
         (self.source / "CameraHost.exe").write_bytes(b"stale untrusted binary")
         (self.source / "assets" / "private.png").write_bytes(b"private image")
-        for relative in ("Lib/site-packages/extra.py", "Lib/__pycache__/os.pyc", "Lib/test/test_os.py", "Lib/Photos/private.jpg", "Lib/settings.json"):
+        for relative in ("Lib/site-packages/extra.py", "Lib/__pycache__/os.pyc", "Lib/test/test_os.py", "Lib/Photos/private.jpg", "Lib/settings.json", "Lib/access.json"):
             path = self.python / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"not for release")
@@ -80,7 +81,7 @@ class ReleaseBuildTests(unittest.TestCase):
             self.assertIn("DeskGuard/_runtime/tcl/tcl8.6/license.terms", names)
             self.assertEqual(archive.read("DeskGuard/_app/CameraHost.exe"), b"compiled camera helper")
             self.assertEqual(archive.read("DeskGuard/_app/PetHost.exe"), b"compiled desktop pet")
-            self.assertFalse(any("private" in name or "site-packages" in name or "__pycache__" in name or "settings.json" in name for name in names))
+            self.assertFalse(any("private" in name or "site-packages" in name or "__pycache__" in name or "settings.json" in name or "access.json" in name for name in names))
         checksum = hashlib.sha256(result["archive"].read_bytes()).hexdigest()
         self.assertEqual(result["checksums"].read_text(), checksum + "  DeskGuard-Windows.zip\n")
         self.assertEqual((self.source / "CameraHost.exe").read_bytes(), b"stale untrusted binary")
