@@ -75,6 +75,8 @@ class ReleaseBuildTests(unittest.TestCase):
             self.assertIn("DeskGuard/_runtime/Lib/os.py", names)
             self.assertIn("DeskGuard/LICENSE", names)
             self.assertIn("DeskGuard/THIRD_PARTY_NOTICES.md", names)
+            self.assertIn("DeskGuard/updates/AppUpdates.ps1", names)
+            self.assertIn("DeskGuard/updates/app-update.json", names)
             for name in builder.ASSETS:
                 self.assertEqual(archive.read("DeskGuard/" + name), b"public app icon")
             self.assertIn("DeskGuard/_runtime/LICENSE.txt", names)
@@ -93,6 +95,12 @@ class ReleaseBuildTests(unittest.TestCase):
         with self.assertRaisesRegex(builder.BuildError, "already exists"):
             self.build()
         self.assertEqual(photo.read_bytes(), b"keep my photo")
+        self.assertFalse((self.output / "DeskGuard-Windows.zip").exists())
+
+    def test_missing_update_component_cannot_create_a_partial_release(self):
+        (self.source / "updates" / "AppUpdates.ps1").unlink()
+        with self.assertRaises(builder.BuildError):
+            self.build()
         self.assertFalse((self.output / "DeskGuard-Windows.zip").exists())
 
     def test_failed_compile_publishes_nothing_and_preserves_other_output_files(self):

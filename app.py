@@ -19,6 +19,7 @@ from desktop_pet import DesktopPet
 from guard_core import TriggerGate, check_storage, save_jpeg, validate_output_dir
 from windows_input import InputMonitor, is_interactive_desktop, keep_awake, read_last_input_tick
 from windows_tray import DesktopControls
+from update_launch import launch_updater
 
 APP_DIR = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 if APP_DIR.name == "_app":
@@ -161,6 +162,7 @@ class GuardApp:
             pass
         tk.Label(heading, text="保安鹅值班台", bg=BG, fg=INK,
                  font=(FONT, 21, "bold")).pack(side="left")
+        ttk.Button(heading, text="检查更新", command=self.check_updates).pack(side="right", padx=(12, 0))
         tk.Label(heading, text="DESKGUARD  /  离席守护", bg=BG, fg=MUTED,
                  font=("Segoe UI", 9)).pack(side="right", anchor="s", pady=7)
 
@@ -274,6 +276,15 @@ class GuardApp:
                   "× 隐藏窗口，托盘菜单退出。仅用于自己的电脑；锁屏暂停拍摄。",
                   foreground=MUTED, wraplength=740, font=(FONT, 9)).grid(row=7, column=0, sticky="w")
         self.log("就绪。启动不会开启摄像头；默认过滤系统标记的模拟输入。")
+
+    def check_updates(self):
+        if self.state != "idle":
+            messagebox.showinfo("软件更新", "请先验证访问密码并停止守护，再检查更新。", parent=self.root)
+            return
+        try:
+            launch_updater(APP_DIR)
+        except OSError as error:
+            messagebox.showerror("软件更新", "无法打开更新窗口，请完整解压新版程序包。\n\n" + str(error), parent=self.root)
 
     def cancel_pet_preview(self):
         pending = getattr(self, "pet_preview_after", None)

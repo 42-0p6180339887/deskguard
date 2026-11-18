@@ -20,7 +20,7 @@ import zipfile
 
 
 APP_MODULES = (
-    "app.py", "guard_core.py", "windows_input.py", "windows_tray.py", "camera_worker.py", "desktop_pet.py", "access_control.py",
+    "app.py", "guard_core.py", "windows_input.py", "windows_tray.py", "camera_worker.py", "desktop_pet.py", "access_control.py", "update_launch.py",
 )
 RUNTIME_FILES = (
     "python.exe", "pythonw.exe", "python3.dll", "python312.dll",
@@ -30,7 +30,7 @@ RUNTIME_TREES = ("Lib", "DLLs", "tcl")
 DOCUMENTS = (
     "LICENSE", "THIRD_PARTY_NOTICES.md", "README.md", "CHANGELOG.md",
     "docs/USER_GUIDE.zh-CN.md", "docs/VALIDATION.zh-CN.md",
-    "docs/DEVELOPMENT.md", "VERSION",
+    "docs/DEVELOPMENT.md", "docs/UPDATES.zh-CN.md", "VERSION", "updates/AppUpdates.ps1", "updates/app-update.json",
 )
 ASSETS = ("assets/deskguard.ico", "assets/deskguard.png", "assets/deskguard-pet.png",
           "assets/deskguard-pet-step.png")
@@ -224,6 +224,10 @@ def build_release(output_dir: Path, python_root: Path, source_dir: Path | None =
     output_dir = Path(output_dir).resolve()
     _validate_python_root(python_root)
     _regular_file(source_dir / "LICENSE")
+    # Update UI wiring is part of this release; a partial checkout must not produce
+    # a package with a visible but unusable update entry.
+    for name in ("updates/AppUpdates.ps1", "updates/app-update.json"):
+        _regular_file(source_dir / name)
     artifacts = {
         "folder": output_dir / "DeskGuard",
         "archive": output_dir / "DeskGuard-Windows.zip",
