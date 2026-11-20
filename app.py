@@ -37,6 +37,51 @@ RED = "#B03737"
 FONT = "Microsoft YaHei UI"
 
 
+class VerifyDialog(simpledialog.Dialog):
+    def __init__(self, parent, title, access):
+        self.access = access
+        super().__init__(parent, title)
+
+    def body(self, master):
+        self.value = tk.StringVar(self)
+        ttk.Label(master, text="请输入访问密码，可直接核对重复数字。").pack(anchor="w")
+        entry = ttk.Entry(master, width=36, textvariable=self.value, exportselection=False)
+        entry.pack(fill="x", pady=5)
+        self.count = ttk.Label(master, text="已输入 0 个字符")
+        self.count.pack(anchor="w")
+        self.feedback = ttk.Label(master, text="", foreground=RED)
+        self.feedback.pack(anchor="w")
+        self.value.trace_add("write", self.changed)
+        return entry
+
+    def changed(self, *_):
+        self.count.configure(text=f"已输入 {len(self.value.get())} 个字符")
+        self.feedback.configure(text="")
+
+    def validate(self):
+        password = self.value.get()
+        if not password:
+            self.feedback.configure(text="请先输入密码。")
+            return False
+        try:
+            if self.access.verify(password):
+                return True
+            remaining = self.access.wait_seconds()
+            message = (f"尝试过多，请 {remaining} 秒后再试。" if remaining else
+                       "密码不匹配，请检查多打或漏打的字符后再试。")
+        except AccessError as exc:
+            message = str(exc)
+        self.feedback.configure(text=message)
+        return False
+
+    def apply(self):
+        self.result = True
+
+    def destroy(self):
+        self.value.set("")
+        super().destroy()
+
+
 class GuardApp:
     def __init__(self, root, settings_file=None, poll=True):
         self.root = root
@@ -317,10 +362,10 @@ class GuardApp:
         self.auth_dialog_active = True
         try:
             self.show_window()
-            password = simpledialog.askstring("设置访问密码", "输入新密码（8–128 个字符）：", show="*", parent=self.root)
+            password = simpledialog.askstring("设置访问密码", "输入新密码（8–128 个字符）：", parent=self.root)
             if password is None:
                 return False
-            confirmation = simpledialog.askstring("确认访问密码", "再次输入新密码：", show="*", parent=self.root)
+            confirmation = simpledialog.askstring("确认访问密码", "再次输入新密码：", parent=self.root)
             if confirmation is None:
                 return False
             if password != confirmation:
@@ -350,13 +395,7 @@ class GuardApp:
             remaining = self.access.wait_seconds()
             if remaining:
                 raise AccessError(f"尝试过多，请 {remaining} 秒后再试。")
-            password = simpledialog.askstring(action, "请输入访问密码；取消将保持当前状态：", show="*", parent=self.root)
-            if password is None:
-                return False
-            if self.access.verify(password):
-                return True
-            messagebox.showerror("验证未通过", "密码不正确，操作未执行。连续 5 次错误后需等待 30 秒。", parent=self.root)
-            return False
+            return VerifyDialog(self.root, action, self.access).result is True
         except AccessError as exc:
             messagebox.showerror("验证未通过", str(exc), parent=self.root)
             return False

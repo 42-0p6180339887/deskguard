@@ -77,7 +77,8 @@ class UpdateLaunchTests(unittest.TestCase):
         version = (source / "VERSION").read_text(encoding="utf-8").strip()
         config = json.loads((source / "updates" / "app-update.json").read_text(encoding="utf-8"))
         self.assertEqual(config["versionName"], version)
-        self.assertEqual(config["versionCode"], 301)
+        major, minor, patch = map(int, version.split("."))
+        self.assertEqual(config["versionCode"], major * 10000 + minor * 100 + patch)
         self.assertEqual(config["appId"], "deskguard")
 
 

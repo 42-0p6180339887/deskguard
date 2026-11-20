@@ -84,11 +84,11 @@ class ProtectedActionsTests(unittest.TestCase):
         self.guard.close = Mock()
 
     def test_cancel_or_incorrect_password_never_stops_or_exits(self):
-        for answer in (None, 'wrong-password'):
+        for answer in (None, False):
             for action in (self.guard.request_stop, self.guard.request_close, self.guard.toggle):
                 self.guard.state = 'armed'
                 self.guard.access.verify.return_value = False
-                with patch.object(app.simpledialog, 'askstring', return_value=answer), patch.object(app.messagebox, 'showerror'):
+                with patch.object(app, 'VerifyDialog', return_value=Mock(result=answer)), patch.object(app.messagebox, 'showerror'):
                     action()
                 self.guard.stop.assert_not_called()
                 self.guard.close.assert_not_called()
@@ -98,7 +98,7 @@ class ProtectedActionsTests(unittest.TestCase):
     def test_correct_password_allows_stop_and_exit(self):
         self.guard.state = 'armed'
         self.guard.access.verify.return_value = True
-        with patch.object(app.simpledialog, 'askstring', return_value='correct-password'):
+        with patch.object(app, 'VerifyDialog', return_value=Mock(result=True)):
             self.guard.request_stop()
             self.guard.request_close()
         self.guard.stop.assert_called_once_with()
@@ -178,3 +178,19 @@ class ProtectedActionsTests(unittest.TestCase):
         self.guard.state = 'idle'
         callback()
         self.guard.arm.assert_not_called()
+
+
+class VisiblePasswordTests(unittest.TestCase):
+    def test_accidental_double_digit_can_be_corrected_in_same_field(self):
+        with tempfile.TemporaryDirectory() as folder:
+            access = AccessControl(Path(folder) / 'test.json')
+            access.set_password('goose3317')
+            dialog = object.__new__(app.VerifyDialog)
+            dialog.access, dialog.feedback, dialog.value = access, Mock(), Mock()
+            dialog.value.get.return_value = ''
+            self.assertFalse(dialog.validate())
+            self.assertEqual(access.failures, 0)
+            for value, valid in [('goose33317', False), ('goose3317', True)]:
+                dialog.value.get.return_value = value
+                self.assertEqual(dialog.validate(), valid)
+            self.assertEqual(access.failures, 0)
