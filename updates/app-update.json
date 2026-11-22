@@ -1,7 +1,7 @@
 {
   "appId": "deskguard",
-  "versionCode": 302,
-  "versionName": "0.3.2",
+  "versionCode": 303,
+  "versionName": "0.3.3",
   "title": "DeskGuard 离席守护",
   "channel": "stable",
   "installInstructions": "下载校验完成后，先验证访问密码并停止守护，从托盘退出 DeskGuard。备份旧目录中的 Photos、settings.json 和 access.json，再将新版程序文件覆盖到原目录，保留这些个人文件。更新窗口不会自行覆盖程序或删除照片。"

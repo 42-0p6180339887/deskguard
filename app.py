@@ -872,7 +872,15 @@ def main():
             messagebox.showinfo("离席守护已在运行", "请按 Ctrl + Alt + F10 显示窗口，或在系统托盘中找到离席守护图标。", parent=root)
             root.destroy()
             return
-        GuardApp(root)
+        guard = GuardApp(root)
+        def check_on_startup():
+            if guard.state != "idle":
+                return
+            try:
+                launch_updater(APP_DIR, startup=True)
+            except OSError:
+                pass
+        root.after_idle(check_on_startup)
         root.mainloop()
     finally:
         kernel.CloseHandle(mutex)

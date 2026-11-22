@@ -26,7 +26,7 @@ def _regular_packaged_file(path, parent):
     return resolved
 
 
-def launch_updater(app_dir):
+def launch_updater(app_dir, startup=False):
     base = Path(app_dir).resolve(strict=True)
     candidate = base / "updates"
     if candidate.is_symlink() or getattr(candidate, "is_junction", lambda: False)():
@@ -38,7 +38,7 @@ def launch_updater(app_dir):
     config = _regular_packaged_file(resource_dir / "app-update.json", resource_dir)
     return subprocess.Popen(
         [str(_system_powershell()), "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass",
-         "-File", str(script), "-Config", str(config)],
+         "-File", str(script), "-Config", str(config)] + (["-StartupCheck"] if startup else []),
         cwd=str(base), shell=False, creationflags=subprocess.CREATE_NO_WINDOW,
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )

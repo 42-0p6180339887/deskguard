@@ -1,4 +1,4 @@
-﻿param([string]$Config = (Join-Path $PSScriptRoot 'app-update.json'))
+﻿param([string]$Config = (Join-Path $PSScriptRoot 'app-update.json'), [switch]$StartupCheck)
 
 $script:UpdateApi = 'https://api.github.com/repos/42-0p6180339887/app-updates'
 $script:UpdateHome = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PrivateAppUpdates'
@@ -200,7 +200,29 @@ function Save-AppUpdatePackage($App, $Item, [string]$Token) {
     }
 }
 
-function Show-AppUpdateWindow($App) {
+function Get-StartupUpdate($App) {
+    if (-not [IO.File]::Exists($script:UpdateAuth)) { return }
+    $name = "$($App.appId)-$($App.channel)"
+    $marker = Join-Path $script:UpdateHome ("last-check-" + $name)
+    $gate = [Threading.Mutex]::new($false, "Local\PrivateAppCheck-$name")
+    $owned = $false
+    try {
+        try { $owned = $gate.WaitOne(0) }
+        catch [Threading.AbandonedMutexException] { $owned = $true }
+        if (-not $owned) { return }
+        $now = [DateTime]::UtcNow
+        $last = [IO.File]::GetLastWriteTimeUtc($marker)
+        if ($last -le $now -and $last -gt $now.AddHours(-12)) { return }
+        [IO.File]::WriteAllText($marker, '')
+    } finally {
+        if ($owned) { $gate.ReleaseMutex() }
+        $gate.Dispose()
+    }
+    $item = Get-AppUpdateManifest $App (Get-AppUpdateToken $App)
+    if ($item.available -and $item.versionCode -gt $App.versionCode) { return $item }
+}
+
+function Show-AppUpdateWindow($App, $StartupCandidate = $null) {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
     [Windows.Forms.Application]::EnableVisualStyles()
@@ -239,7 +261,7 @@ function Show-AppUpdateWindow($App) {
     $login = $buttons['GitHub 登录']
     $download.Enabled = $false
     $login.Visible = [bool]$App.clientId
-    $state = @{ candidate=$null; device=$null }
+    $state = @{ candidate=$null; device=$null; startup=$StartupCandidate }
     $authPath = $script:UpdateAuth
     $poll = [Windows.Forms.Timer]::new()
     $checkAction = {
@@ -248,7 +270,12 @@ function Show-AppUpdateWindow($App) {
         $status.Text = '正在检查更新…'
         $status.Refresh()
         try {
-            $item = Get-AppUpdateManifest $App (Get-AppUpdateToken $App)
+            if ($state.startup) {
+                $item = $state.startup
+                $state.startup = $null
+            } else {
+                $item = Get-AppUpdateManifest $App (Get-AppUpdateToken $App)
+            }
             if ($item.available -and $item.versionCode -gt $App.versionCode) {
                 $state.candidate = $item
                 $notes.Text = ($item.notes -replace '\r?\n',[Environment]::NewLine) + [Environment]::NewLine + [Environment]::NewLine + $App.installInstructions
@@ -357,19 +384,31 @@ if ($MyInvocation.InvocationName -ne '.') {
         Add-Type -AssemblyName System.Security
         Add-Type -AssemblyName System.Net.Http
         $app = Read-AppUpdateConfig $Config
+        $handler = [Net.Http.HttpClientHandler]::new()
+        $handler.AllowAutoRedirect = $false
+        $script:UpdateHttp = [Net.Http.HttpClient]::new($handler)
+        $candidate = $null
+        if ($StartupCheck) {
+            $candidate = Get-StartupUpdate $app
+            if (-not $candidate) { return }
+            Add-Type -AssemblyName System.Windows.Forms
+            [void][Windows.Forms.MessageBox]::Show(
+                ("发现 DeskGuard " + $candidate.versionName + "。请在停止守护后，通过主窗口的「检查更新」下载。"),
+                'DeskGuard 更新')
+            return
+        }
         $mutex = [Threading.Mutex]::new($false,'Local\PrivateAppUpdates-v1')
         try { $ownsMutex = $mutex.WaitOne(0) }
         catch [Threading.AbandonedMutexException] { $ownsMutex = $true }
         if (-not $ownsMutex) { throw '已有应用更新窗口打开，请先关闭它。' }
-        $handler = [Net.Http.HttpClientHandler]::new()
-        $handler.AllowAutoRedirect = $false
-        $script:UpdateHttp = [Net.Http.HttpClient]::new($handler)
-        try { Show-AppUpdateWindow $app } finally { $script:UpdateHttp.Dispose() }
+        Show-AppUpdateWindow $app $candidate
     } catch {
+        if ($StartupCheck) { return }
         Add-Type -AssemblyName System.Windows.Forms
         [void][Windows.Forms.MessageBox]::Show($_.Exception.Message,'应用更新')
         exit 1
     } finally {
+        if ($script:UpdateHttp) { $script:UpdateHttp.Dispose() }
         if ($ownsMutex) { $mutex.ReleaseMutex() }
         if ($mutex) { $mutex.Dispose() }
     }
