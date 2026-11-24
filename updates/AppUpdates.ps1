@@ -229,7 +229,7 @@ function Show-AppUpdateWindow($App, $StartupCandidate = $null) {
     $form = [Windows.Forms.Form]::new()
     $form.Text = "$($App.title) · 应用更新"
     $form.StartPosition = 'CenterScreen'
-    $form.ClientSize = [Drawing.Size]::new(640,310)
+    $form.ClientSize = [Drawing.Size]::new(700,390)
     $form.FormBorderStyle = 'FixedDialog'
     $form.MaximizeBox = $false
     $form.Font = [Drawing.Font]::new('Microsoft YaHei UI',10)
@@ -237,18 +237,20 @@ function Show-AppUpdateWindow($App, $StartupCandidate = $null) {
     $version.SetBounds(16,14,605,26)
     $version.Text = "已安装 $($App.versionName)    $($App.channel)"
     $status = [Windows.Forms.Label]::new()
-    $status.SetBounds(16,44,605,45)
-    $status.Text = '从私有仓库检查可用更新。'
+    $status.SetBounds(16,44,665,45)
+    $status.Text = '首次使用：点击“获取/设置令牌”，按窗口提示完成一次授权。'
     $notes = [Windows.Forms.TextBox]::new()
-    $notes.SetBounds(16,92,605,166)
+    $notes.SetBounds(16,92,665,230)
     $notes.Multiline = $true
     $notes.ReadOnly = $true
     $notes.ScrollBars = 'Vertical'
     $notes.Text = $App.installInstructions
     $bar = [Windows.Forms.FlowLayoutPanel]::new()
-    $bar.SetBounds(16,264,605,40)
+    $bar.SetBounds(16,330,665,46)
+    $bar.WrapContents = $true
+    $bar.AutoScroll = $true
     $buttons = @{}
-    foreach ($label in @('检查更新','下载更新','GitHub 登录','设置只读令牌','清除此机授权')) {
+    foreach ($label in @('检查更新','下载更新','GitHub 登录','获取/设置令牌','清除授权')) {
         $button = [Windows.Forms.Button]::new()
         $button.AutoSize = $true
         $button.Text = $label
@@ -297,23 +299,43 @@ function Show-AppUpdateWindow($App, $StartupCandidate = $null) {
             Invoke-Item -LiteralPath ([IO.Path]::GetDirectoryName($path)) -ErrorAction Stop
         } catch { $status.Text = $_.Exception.Message }
     }.GetNewClosure())
-    $buttons['设置只读令牌'].Add_Click({
+    $buttons['获取/设置令牌'].Add_Click({
         $prompt = [Windows.Forms.Form]::new()
         $prompt.Text = 'GitHub 更新授权'
         $prompt.StartPosition = 'CenterParent'
-        $prompt.ClientSize = [Drawing.Size]::new(545,145)
+        $prompt.ClientSize = [Drawing.Size]::new(650,300)
         $hint = [Windows.Forms.Label]::new()
-        $hint.SetBounds(12,12,520,42)
-        $hint.Text = '输入你自己的细粒度 GitHub 令牌。仅给 app-updates 仓库 Contents: read 权限。'
+        $hint.SetBounds(12,12,626,86)
+        $hint.Text = '第一次使用请按这 4 步操作：' + [Environment]::NewLine +
+            '1. 点击“打开 GitHub 创建页面”，登录你的 GitHub 账号。' + [Environment]::NewLine +
+            '2. 创建 Fine-grained token；Repository access 选 Only select repositories。' + [Environment]::NewLine +
+            '3. 只选择 42-0p6180339887/app-updates，Repository permissions → Contents 选 Read-only。' + [Environment]::NewLine +
+            '4. 点击 Generate token，复制刚出现的一串 github_pat_...，粘贴到下面。'
+        $hint.AutoSize = $false
+        $hint.MaximumSize = [Drawing.Size]::new(626,86)
         $field = [Windows.Forms.TextBox]::new()
-        $field.SetBounds(12,60,520,25)
+        $field.SetBounds(12,112,626,25)
         $field.UseSystemPasswordChar = $true
+        $field.TabIndex = 0
+        $show = [Windows.Forms.CheckBox]::new()
+        $show.SetBounds(12,142,140,25)
+        $show.Text = '显示令牌内容'
+        $show.Add_CheckedChanged({ $field.UseSystemPasswordChar = -not $show.Checked }.GetNewClosure())
+        $open = [Windows.Forms.Button]::new()
+        $open.SetBounds(12,180,205,30)
+        $open.Text = '打开 GitHub 创建页面'
+        $open.Add_Click({ Start-Process 'https://github.com/settings/personal-access-tokens/new' }.GetNewClosure())
+        $help = [Windows.Forms.Button]::new()
+        $help.SetBounds(228,180,180,30)
+        $help.Text = '打开官方详细说明'
+        $help.Add_Click({ Start-Process 'https://docs.github.com/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens' }.GetNewClosure())
         $accept = [Windows.Forms.Button]::new()
-        $accept.SetBounds(425,99,107,29)
+        $accept.SetBounds(531,240,107,29)
         $accept.Text = '验证并保存'
         $accept.DialogResult = 'OK'
-        $prompt.Controls.AddRange(@($hint,$field,$accept))
+        $prompt.Controls.AddRange(@($hint,$field,$show,$open,$help,$accept))
         $prompt.AcceptButton = $accept
+        $prompt.Add_Shown({ $field.Focus() }.GetNewClosure())
         try {
             if ($prompt.ShowDialog($form) -ne 'OK') { return }
             $token = $field.Text.Trim()
@@ -327,7 +349,7 @@ function Show-AppUpdateWindow($App, $StartupCandidate = $null) {
         } catch { $status.Text = $_.Exception.Message }
         finally { $field.Clear(); $prompt.Dispose() }
     }.GetNewClosure())
-    $buttons['清除此机授权'].Add_Click({
+    $buttons['清除授权'].Add_Click({
         $poll.Stop()
         $state.device = $null
         $login.Enabled = $true

@@ -4,6 +4,8 @@
 
 更新组件固定为程序旁 `updates/AppUpdates.ps1` 和 `updates/app-update.json`。便携包须完整解压，不能只复制 EXE。组件缺失时显示错误，不会改从当前目录或网上执行其他脚本。
 
+第一次使用更新功能时，在更新窗口点击“获取/设置令牌”，再点击“打开 GitHub 创建页面”。创建 Fine-grained personal access token 时：Repository access 选择 `Only select repositories`，只选择 `42-0p6180339887/app-updates`；Repository permissions 中将 `Contents` 设为 `Read-only`；生成后复制一次性显示的 `github_pat_...`，粘贴回程序并点击“验证并保存”。令牌输入框默认隐藏，勾选“显示令牌内容”可核对粘贴是否完整。程序不能找回已经关闭页面的旧令牌，也不会自动读取浏览器密码。
+
 更新来源为 `42-0p6180339887/app-updates` 私有仓库。用户须有读取权限；专用 GitHub App 配置后可用设备码授权，当前也可按更新窗口说明使用仅限该仓库读取的个人令牌。授权保存在 Windows 当前用户的 DPAPI 安全存储，发布包不包含用户凭据。
 
 下载完成并校验大小与 SHA-256 后，窗口打开下载文件夹。先从托盘退出旧程序，备份并保留旧目录中的 `Photos`、`settings.json` 和 `access.json`，再将新版程序文件覆盖到原目录。更新窗口不自动覆盖程序文件，不删除照片或修改访问密码。

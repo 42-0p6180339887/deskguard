@@ -1,8 +1,8 @@
 {
   "appId": "deskguard",
-  "versionCode": 303,
-  "versionName": "0.3.3",
+  "versionCode": 304,
+  "versionName": "0.3.4",
   "title": "DeskGuard 离席守护",
   "channel": "stable",
-  "installInstructions": "下载校验完成后，先验证访问密码并停止守护，从托盘退出 DeskGuard。备份旧目录中的 Photos、settings.json 和 access.json，再将新版程序文件覆盖到原目录，保留这些个人文件。更新窗口不会自行覆盖程序或删除照片。"
+  "installInstructions": "第一次更新：点击“获取/设置令牌”→“打开 GitHub 创建页面”，创建 Fine-grained token；只选择 42-0p6180339887/app-updates，并把 Repository permissions → Contents 设置为 Read-only。复制生成的 github_pat_... 粘贴回程序即可。下载校验完成后，先验证访问密码并停止守护，从托盘退出 DeskGuard。备份旧目录中的 Photos、settings.json 和 access.json，再将新版程序文件覆盖到原目录，保留这些个人文件。更新窗口不会自行覆盖程序或删除照片。"
 }
