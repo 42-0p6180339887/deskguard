@@ -80,3 +80,15 @@ class DesktopPet:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=1)
+
+    def look_at_activity(self) -> None:
+        """Ask the visible patrol pet to pause and look toward the screen."""
+        process = self._process
+        if process is None or process.poll() is not None or process.stdin is None:
+            return
+        try:
+            process.stdin.write(b"LOOK\n")
+            process.stdin.flush()
+        except (OSError, ValueError):
+            # A patrol can finish between the visibility check and the write.
+            pass

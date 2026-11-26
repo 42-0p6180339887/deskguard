@@ -41,6 +41,17 @@ class DesktopPetTests(unittest.TestCase):
         process.terminate.assert_not_called()
         self.assertFalse(self.pet.visible)
 
+    def test_activity_look_is_sent_to_visible_pet(self):
+        process = Mock()
+        process.poll.return_value = None
+        process.wait.side_effect = [subprocess.TimeoutExpired("pet", 0.15), 0]
+        with patch("desktop_pet.subprocess.Popen", return_value=process):
+            self.pet.set_visible(True)
+            self.pet.look_at_activity()
+        process.stdin.write.assert_called_once_with(b"LOOK\n")
+        process.stdin.flush.assert_called_once_with()
+        self.pet.close()
+
     def test_failed_start_closes_pipe_and_reports_failure(self):
         process = Mock()
         process.wait.return_value = 1

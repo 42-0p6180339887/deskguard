@@ -735,6 +735,7 @@ class GuardApp:
                 self.shot_pending = False
                 self.latest = Path(event[1])
                 self.count += 1
+                self.pet.look_at_activity()
                 self.stats_label.configure(text=f"本次已保存 {self.count} 张 · 最近 {time.strftime('%H:%M:%S')}")
                 self.view_button.configure(state="normal")
                 self.log("已保存 " + self.latest.name)

@@ -28,7 +28,16 @@ internal static class PetHost {
                 var watcher = new Thread(() => {
                     try {
                         using (var input = Console.OpenStandardInput()) {
-                            while (input.ReadByte() != -1) { }
+                            using (var reader = new StreamReader(input)) {
+                                string command;
+                                while ((command = reader.ReadLine()) != null) {
+                                    if (command != "LOOK") continue;
+                                    try {
+                                        if (!pet.IsDisposed && pet.IsHandleCreated)
+                                            pet.BeginInvoke((Action)(() => pet.BeginLook()));
+                                    } catch (InvalidOperationException) { }
+                                }
+                            }
                         }
                     } catch (IOException) { }
                     try {
@@ -69,6 +78,10 @@ internal static class PetHost {
         private readonly bool gentle;
         private readonly bool systemAnimationsOff;
         private int lastBoundsCheck;
+        private bool looking;
+        private long lookUntil;
+        private double lookX;
+        private int lookDirection;
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool SystemParametersInfoW(uint action, uint param,
@@ -110,7 +123,7 @@ internal static class PetHost {
             ShowInTaskbar = false;
             TopMost = true;
             StartPosition = FormStartPosition.Manual;
-            work = Screen.PrimaryScreen.WorkingArea;
+            work = VirtualWorkingArea();
             int preferred = size == "small" ? 240 : size == "medium" ? 330 : 420;
             side = Math.Min(preferred, Math.Max(180, (int)(work.Height * 0.42)));
             side = Math.Min(side, Math.Min(work.Width, work.Height));
@@ -151,6 +164,37 @@ internal static class PetHost {
                 clock.Start(); TickPatrol();
                 timer.Start();
             };
+        }
+
+        private static Rectangle VirtualWorkingArea() {
+            Screen[] screens = Screen.AllScreens;
+            if (screens.Length == 0) return SystemInformation.WorkingArea;
+            Rectangle area = screens[0].WorkingArea;
+            for (int i = 1; i < screens.Length; i++)
+                area = Rectangle.Union(area, screens[i].WorkingArea);
+            return area;
+        }
+
+        internal void BeginLook() {
+            if (IsDisposed) return;
+            if (looking) {
+                lookUntil = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond + 500;
+                return;
+            }
+            double seconds = clock.Elapsed.TotalSeconds;
+            Rectangle current = VirtualWorkingArea();
+            if (current != work) {
+                work = current;
+                clock.Restart();
+                seconds = 0;
+            }
+            Motion motion = Sample(systemAnimationsOff ? 0 : seconds, work.Left,
+                Math.Max(work.Left, work.Right - side), speed, side);
+            lookX = motion.X;
+            lookDirection = motion.Heading == 1 ? 0 : 1;
+            looking = true;
+            lookUntil = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond + 500;
+            clock.Stop();
         }
 
         protected override CreateParams CreateParams {
@@ -258,10 +302,18 @@ internal static class PetHost {
         }
 
         private void TickPatrol() {
+            if (looking) {
+                if (DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond < lookUntil) {
+                    PaintFrame(turns[lookDirection, TurnCount - 1], lookX, 0);
+                    return;
+                }
+                looking = false;
+                clock.Start();
+            }
             double seconds = clock.Elapsed.TotalSeconds;
             if ((int)seconds != lastBoundsCheck) {
                 lastBoundsCheck = (int)seconds;
-                Rectangle current = Screen.PrimaryScreen.WorkingArea;
+                Rectangle current = VirtualWorkingArea();
                 if (current != work) { work = current; clock.Restart(); seconds = 0; lastBoundsCheck = 0; }
             }
             Motion motion = Sample(systemAnimationsOff ? 0 : seconds, work.Left,
